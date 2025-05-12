@@ -22,16 +22,27 @@ export default async function handler(req, res) {
   };
 
   try {
-    const url = `${JIRA_BASE_URL}/rest/api/3/search?jql=project=${JIRA_PROJECT_KEY}`;
-    console.log("🔗 Buscando do Jira:", url);
+    let allIssues = [];
+    let currentStartAt = 0;
+    const maxResults = 1000;
+    let total = 0;
 
-    const response = await axios.get(url, { auth });
-    const issues = response.data.issues;
+    do {
+      const url = `${JIRA_BASE_URL}/rest/api/3/search?jql=project=${JIRA_PROJECT_KEY}&startAt=${currentStartAt}&maxResults=${maxResults}`;
+      console.log("🔗 Buscando do Jira:", url);
 
-    console.log("📦 Summaries retornados:");
-    issues.forEach(issue => console.log("-", issue.fields.summary));
+      const response = await axios.get(url, { auth });
+      const issues = response.data.issues;
 
-    const produtoEncontrado = issues.find(issue =>
+      allIssues = allIssues.concat(issues);
+      currentStartAt += maxResults;
+      total = response.data.total;
+
+      console.log("📦 Summaries retornados:");
+      issues.forEach(issue => console.log("-", issue.fields.summary));
+    } while (currentStartAt < total);
+
+    const produtoEncontrado = allIssues.find(issue =>
       summary.toLowerCase().includes(issue.fields.summary.toLowerCase())
     )?.fields.summary;
 
@@ -46,7 +57,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         produto: "Não encontrado",
         summaryRecebido: summary,
-        summariesDoProjeto: issues.map(i => i.fields.summary)
+        summariesDoProjeto: allIssues.map(i => i.fields.summary)
       });
     }
   } catch (error) {
