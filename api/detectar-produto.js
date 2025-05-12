@@ -12,51 +12,35 @@ const auth = {
   password: JIRA_API_TOKEN
 };
 
-// ... resto do código
-
-
-async function buscarSummariesDoProjeto() {
-  const jql = `project=${JIRA_PROJECT_KEY}`;
-  const url = `${JIRA_BASE_URL}/rest/api/3/search`;
-
-  const response = await axios.get(url, {
-    auth,
-    params: {
-      jql,
-      fields: 'summary',
-      maxResults: 100
-    }
-  });
-
-  return response.data.issues.map(issue => issue.fields.summary);
-}
-
-async function detectarProduto(summary) {
-  const todosSummaries = await buscarSummariesDoProjeto();
-  for (let existente of todosSummaries) {
-    if (summary.toLowerCase().includes(existente.toLowerCase())) {
-      return existente;
-    }
-  }
-  return null;
-}
-
-// ⚠️ Exporta handler compatível com Vercel
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Método não permitido' });
   }
 
   const { summary } = req.body;
-  if (!summary) return res.status(400).json({ error: 'Resumo não fornecido' });
+
+  if (!summary) {
+    return res.status(400).json({ error: 'Resumo não fornecido' });
+  }
 
   try {
-    const produto = await detectarProduto(summary);
-    return res.status(200).json({ produto });
+    const response = await axios.get(
+      `${JIRA_BASE_URL}/rest/api/3/search?jql=project=${JIRA_PROJECT_KEY}`,
+      { auth }
+    );
+
+    const issues = response.data.issues;
+    const produtoEncontrado = issues.find(issue =>
+      summary.includes(issue.fields.summary)
+    )?.fields.summary;
+
+    if (!produtoEncontrado) {
+      return res.status(200).json({ produto: 'Não encontrado', summary });
+    }
+
+    return res.status(200).json({ produto: produtoEncontrado, summary });
   } catch (error) {
-    console.error('Erro ao consultar o Jira:', error.message);
-    return res.status(500).json({ error: 'Erro ao consultar Jira' });
+    console.error(error.response?.data || error.message);
+    return res.status(500).json({ error: 'Erro ao buscar issues do Jira' });
   }
 }
-
-
