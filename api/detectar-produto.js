@@ -1,4 +1,4 @@
-const axios = require('axios');
+import axios from 'axios';
 
 const {
   JIRA_EMAIL,
@@ -11,6 +11,9 @@ const auth = {
   username: JIRA_EMAIL,
   password: JIRA_API_TOKEN
 };
+
+// ... resto do código
+
 
 async function buscarSummariesDoProjeto() {
   const jql = `project=${JIRA_PROJECT_KEY}`;
