@@ -31,9 +31,9 @@ export default async function handler(req, res) {
 
     const issues = response.data.issues;
     const produtoEncontrado = issues.find(issue =>
-      summary.includes(issue.fields.summary)
-    )?.fields.summary;
-
+        summary.toLowerCase().includes(issue.fields.summary.toLowerCase())
+      )?.fields.summary;
+      
     if (!produtoEncontrado) {
       return res.status(200).json({ produto: 'Não encontrado', summary });
     }
