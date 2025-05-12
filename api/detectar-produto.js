@@ -31,8 +31,9 @@ export default async function handler(req, res) {
 
     const issues = response.data.issues;
     const produtoEncontrado = issues.find(issue =>
-        issue.fields.summary.toLowerCase().includes(summary.toLowerCase())
+        summary.toLowerCase().includes(issue.fields.summary.toLowerCase())
       )?.fields.summary;
+      
       
       
     if (!produtoEncontrado) {
