@@ -23,41 +23,44 @@ export default async function handler(req, res) {
 
   try {
     let allIssues = [];
-    let currentStartAt = 0;
-    const maxResults = 1000;
+    let startAt = 0;
+    const maxResults = 100;
     let total = 0;
 
     do {
-      const url = `${JIRA_BASE_URL}/rest/api/3/search?jql=project=${JIRA_PROJECT_KEY}&startAt=${currentStartAt}&maxResults=${maxResults}`;
+      const url = `${JIRA_BASE_URL}/rest/api/3/search?jql=project=${JIRA_PROJECT_KEY}&startAt=${startAt}&maxResults=${maxResults}`;
       console.log("🔗 Buscando do Jira:", url);
 
       const response = await axios.get(url, { auth });
       const issues = response.data.issues;
 
       allIssues = allIssues.concat(issues);
-      currentStartAt += maxResults;
+      startAt += maxResults;
       total = response.data.total;
 
-      console.log("📦 Summaries retornados:");
-      issues.forEach(issue => console.log("-", issue.fields.summary));
-    } while (currentStartAt < total);
+      console.log(`📦 Página recebida: ${issues.length} issues (total até agora: ${allIssues.length}/${total})`);
+    } while (startAt < total);
 
-    const produtoEncontrado = allIssues.find(issue =>
-      summary.toLowerCase().includes(issue.fields.summary.toLowerCase())
-    )?.fields.summary;
+    const summaries = allIssues.map(issue => issue.fields.summary);
+    console.log("📋 Todos os summaries:");
+    summaries.forEach(s => console.log("- " + s));
+
+    const produtoEncontrado = summaries.find(s =>
+      summary.toLowerCase().includes(s.toLowerCase())
+    );
 
     if (produtoEncontrado) {
       console.log("✅ Produto encontrado:", produtoEncontrado);
       return res.status(200).json({
         produto: produtoEncontrado,
-        summaryRecebido: summary
+        summaryRecebido: summary,
       });
     } else {
       console.log("❌ Produto não encontrado");
       return res.status(200).json({
         produto: "Não encontrado",
         summaryRecebido: summary,
-        summariesDoProjeto: allIssues.map(i => i.fields.summary)
+        summariesDoProjeto: summaries
       });
     }
   } catch (error) {
