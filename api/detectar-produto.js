@@ -68,3 +68,17 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Erro ao buscar dados do Jira" });
   }
 }
+
+
+/* 
+  Exemplo de resposta:
+  {
+    "produto": "Produto A",
+    "summaryRecebido": "Resumo do produto A",
+    "summariesDoProjeto": [
+      "Produto A",
+      "Produto B",
+      "Produto C"
+    ]
+  }
+*/
