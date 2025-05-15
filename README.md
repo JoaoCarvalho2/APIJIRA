@@ -68,8 +68,8 @@ Crie um arquivo `.env.local` com as seguintes variáveis:
 ```env
 JIRA_EMAIL=seu_email@dominio.com
 JIRA_API_TOKEN=seu_token_api
-JIRA_BASE_URL=https://targetware.atlassian.net
-JIRA_PROJECT_KEY=IMP
+JIRA_BASE_URL= (sua instância da atlassian)
+JIRA_PROJECT_KEY= (Sigla do seu projeto)
 ```
 
 Você pode gerar um token de API aqui: [https://id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
