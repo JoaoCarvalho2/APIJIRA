@@ -1,5 +1,4 @@
 import axios from "axios";
-import stringSimilarity from "string-similarity";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -30,28 +29,31 @@ export default async function handler(req, res) {
 
     do {
       const url = `${JIRA_BASE_URL}/rest/api/3/search?jql=project=${JIRA_PROJECT_KEY}&startAt=${startAt}&maxResults=${maxResults}`;
+      console.log("🔗 Buscando do Jira:", url);
+
       const response = await axios.get(url, { auth });
       const issues = response.data.issues;
 
       allIssues = allIssues.concat(issues);
       startAt += maxResults;
       total = response.data.total;
+
+      console.log(`📦 Página recebida: ${issues.length} issues (total até agora: ${allIssues.length}/${total})`);
     } while (startAt < total);
 
     const summaries = allIssues.map(issue => issue.fields.summary);
+    console.log("📋 Todos os summaries:");
+    summaries.forEach(s => console.log("- " + s));
 
-    console.log("📨 Summary recebido:", summary);
-    console.log("🔍 Comparando com summaries do Jira...");
-
-    const bestMatch = stringSimilarity.findBestMatch(summary, summaries);
-    const produtoEncontrado = bestMatch.bestMatch.rating > 0.4 ? bestMatch.bestMatch.target : null;
+    const produtoEncontrado = summaries.find(s =>
+      summary.toLowerCase().includes(s.toLowerCase())
+    );
 
     if (produtoEncontrado) {
       console.log("✅ Produto encontrado:", produtoEncontrado);
       return res.status(200).json({
         produto: produtoEncontrado,
         summaryRecebido: summary,
-        similaridade: bestMatch.bestMatch.rating.toFixed(2)
       });
     } else {
       console.log("❌ Produto não encontrado");
@@ -66,3 +68,17 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Erro ao buscar dados do Jira" });
   }
 }
+
+
+/* 
+  Exemplo de resposta:
+  {
+    "produto": "Produto A",
+    "summaryRecebido": "Resumo do produto A",
+    "summariesDoProjeto": [
+      "Produto A",
+      "Produto B",
+      "Produto C"
+    ]
+  }
+*/
