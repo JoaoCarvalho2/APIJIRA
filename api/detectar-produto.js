@@ -42,12 +42,18 @@ export default async function handler(req, res) {
     } while (startAt < total);
 
     const summaries = allIssues.map(issue => issue.fields.summary);
-    console.log("📋 Todos os summaries:");
-    summaries.forEach(s => console.log("- " + s));
+    const summaryLower = summary.toLowerCase();
 
-    const produtoEncontrado = summaries.find(s =>
-      summary.toLowerCase().includes(s.toLowerCase())
-    );
+    // Ordena os summaries por tamanho decrescente
+    summaries.sort((a, b) => b.length - a.length);
+
+    // Faz a correspondência com includes nos dois sentidos
+    const produtoEncontrado = summaries.find(s => {
+      const sLower = s.toLowerCase();
+      return summaryLower.includes(sLower) || sLower.includes(summaryLower);
+    });
+
+    console.log("📨 Summary recebido:", summary);
 
     if (produtoEncontrado) {
       console.log("✅ Produto encontrado:", produtoEncontrado);
@@ -56,7 +62,7 @@ export default async function handler(req, res) {
         summaryRecebido: summary,
       });
     } else {
-      console.log("❌ Produto não encontrado");
+      console.log("❌ Nenhum produto encontrado");
       return res.status(200).json({
         produto: "Não encontrado",
         summaryRecebido: summary,
@@ -68,17 +74,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Erro ao buscar dados do Jira" });
   }
 }
-
-
-/* 
-  Exemplo de resposta:
-  {
-    "produto": "Produto A",
-    "summaryRecebido": "Resumo do produto A",
-    "summariesDoProjeto": [
-      "Produto A",
-      "Produto B",
-      "Produto C"
-    ]
-  }
-*/
