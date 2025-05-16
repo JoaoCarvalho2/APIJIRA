@@ -1,7 +1,6 @@
 import axios from "axios";
-// Se necessário, descomente:
-// import fetch from "node-fetch";
 
+// 1. Extrair produto com Gemini
 async function extrairProdutoDoSummary(summary) {
   const API_KEY = process.env.GEMINI_API_KEY;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${API_KEY}`;
@@ -12,9 +11,7 @@ async function extrairProdutoDoSummary(summary) {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }]
-      })
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
     });
 
     const data = await response.json();
@@ -25,6 +22,7 @@ async function extrairProdutoDoSummary(summary) {
   }
 }
 
+// 2. Criação de issue
 async function criarIssueNoJira(produto, auth, projectKey, baseUrl) {
   const issueData = {
     fields: {
@@ -38,6 +36,7 @@ async function criarIssueNoJira(produto, auth, projectKey, baseUrl) {
   return response.data.key;
 }
 
+// 3. Comentário
 async function adicionarComentarioNaIssue(issueKey, comentario, auth, baseUrl) {
   await axios.post(
     `${baseUrl}/rest/api/3/issue/${issueKey}/comment`,
@@ -46,30 +45,67 @@ async function adicionarComentarioNaIssue(issueKey, comentario, auth, baseUrl) {
   );
 }
 
-async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
-  const customFieldId = "customfield_10878"; // Substitua se o ID for diferente
+// 4. Atualizar campo personalizado
+async function buscarOpcoesDoCampo(customFieldId, auth, baseUrl) {
+  const response = await axios.get(
+    `${baseUrl}/rest/api/3/field/${customFieldId}/context/option`,
+    { auth }
+  );
+  return response.data.values || [];
+}
 
+async function buscarContextoDoCampo(customFieldId, auth, baseUrl) {
+  const response = await axios.get(
+    `${baseUrl}/rest/api/3/field/${customFieldId}/context`,
+    { auth }
+  );
+  return response.data.values?.[0]?.id;
+}
+
+async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, baseUrl) {
   const body = {
-    fields: {
-      [customFieldId]: produto
-    }
+    options: [{ value: novoValor }]
   };
 
-  await axios.put(
-    `${baseUrl}/rest/api/3/issue/${issueKey}`,
+  await axios.post(
+    `${baseUrl}/rest/api/3/field/${customFieldId}/context/${contextId}/option`,
     body,
     { auth }
   );
 }
 
+async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
+  const customFieldId = "customfield_10878";
+
+  const opcoes = await buscarOpcoesDoCampo(customFieldId, auth, baseUrl);
+  const existe = opcoes.some(opt => opt.value.toLowerCase() === produto.toLowerCase());
+
+  if (!existe) {
+    const contextId = await buscarContextoDoCampo(customFieldId, auth, baseUrl);
+    await criarOpcaoNoCampo(customFieldId, contextId, produto, auth, baseUrl);
+  }
+
+  await axios.put(
+    `${baseUrl}/rest/api/3/issue/${issueKey}`,
+    {
+      fields: {
+        [customFieldId]: { value: produto }
+      }
+    },
+    { auth }
+  );
+}
+
+// 5. Handler principal
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido" });
   }
 
-  const { summary, issueKey } = req.body;
+  const { summary, issueKey } = req.body || {};
 
   if (!summary || !issueKey) {
+    console.error("❌ summary ou issueKey ausente:", { summary, issueKey });
     return res.status(400).json({ error: "Resumo ou issueKey não fornecido" });
   }
 
@@ -84,6 +120,7 @@ export default async function handler(req, res) {
   };
 
   try {
+    // Buscar summaries existentes
     let allIssues = [];
     let startAt = 0;
     const maxResults = 100;
@@ -107,10 +144,13 @@ export default async function handler(req, res) {
     );
 
     if (produtoEncontrado) {
+      await atualizarCampoProdutoNaIssue(issueKey, produtoEncontrado, auth, JIRA_BASE_URL);
+
       return res.status(200).json({
         produto: produtoEncontrado,
         summaryRecebido: summary,
-        criadoAutomaticamente: false
+        criadoAutomaticamente: false,
+        atualizadoNaIssueOriginal: true
       });
     }
 
@@ -124,14 +164,13 @@ export default async function handler(req, res) {
     }
 
     const novaIssueKey = await criarIssueNoJira(produtoExtraido, auth, JIRA_PROJECT_KEY, JIRA_BASE_URL);
+    await atualizarCampoProdutoNaIssue(issueKey, produtoExtraido, auth, JIRA_BASE_URL);
     await adicionarComentarioNaIssue(
       issueKey,
       `Produto "${produtoExtraido}" não foi encontrado e foi criado automaticamente como ${novaIssueKey}.`,
       auth,
       JIRA_BASE_URL
     );
-
-    await atualizarCampoProdutoNaIssue(issueKey, produtoExtraido, auth, JIRA_BASE_URL);
 
     return res.status(200).json({
       produto: produtoExtraido,
