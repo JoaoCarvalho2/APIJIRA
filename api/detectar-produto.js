@@ -1,14 +1,76 @@
 import axios from "axios";
+// Se necessário, descomente:
+// import fetch from "node-fetch";
+
+async function extrairProdutoDoSummary(summary) {
+  const API_KEY = process.env.GEMINI_API_KEY;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${API_KEY}`;
+
+  const prompt = `A partir deste resumo, extraia apenas o nome do produto ou software mencionado:\n\n"${summary}"\n\nA resposta deve conter apenas o nome do produto, sem explicações.`;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }]
+      })
+    });
+
+    const data = await response.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+  } catch (error) {
+    console.error("❗ Erro ao consultar Gemini:", error.message);
+    return null;
+  }
+}
+
+async function criarIssueNoJira(produto, auth, projectKey, baseUrl) {
+  const issueData = {
+    fields: {
+      project: { key: projectKey },
+      summary: produto,
+      issuetype: { name: "Task" }
+    }
+  };
+
+  const response = await axios.post(`${baseUrl}/rest/api/3/issue`, issueData, { auth });
+  return response.data.key;
+}
+
+async function adicionarComentarioNaIssue(issueKey, comentario, auth, baseUrl) {
+  await axios.post(
+    `${baseUrl}/rest/api/3/issue/${issueKey}/comment`,
+    { body: comentario },
+    { auth }
+  );
+}
+
+async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
+  const customFieldId = "customfield_10878"; // Substitua se o ID for diferente
+
+  const body = {
+    fields: {
+      [customFieldId]: produto
+    }
+  };
+
+  await axios.put(
+    `${baseUrl}/rest/api/3/issue/${issueKey}`,
+    body,
+    { auth }
+  );
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido" });
   }
 
-  const { summary } = req.body;
+  const { summary, issueKey } = req.body;
 
-  if (!summary) {
-    return res.status(400).json({ error: "Resumo não fornecido" });
+  if (!summary || !issueKey) {
+    return res.status(400).json({ error: "Resumo ou issueKey não fornecido" });
   }
 
   const JIRA_EMAIL = process.env.JIRA_EMAIL;
@@ -29,48 +91,58 @@ export default async function handler(req, res) {
 
     do {
       const url = `${JIRA_BASE_URL}/rest/api/3/search?jql=project=${JIRA_PROJECT_KEY}&startAt=${startAt}&maxResults=${maxResults}`;
-      console.log("🔗 Buscando do Jira:", url);
-
       const response = await axios.get(url, { auth });
-      const issues = response.data.issues;
 
-      allIssues = allIssues.concat(issues);
+      allIssues = allIssues.concat(response.data.issues);
       startAt += maxResults;
       total = response.data.total;
-
-      console.log(`📦 Página recebida: ${issues.length} issues (total até agora: ${allIssues.length}/${total})`);
     } while (startAt < total);
 
     const summaries = allIssues.map(issue => issue.fields.summary);
     const summaryLower = summary.toLowerCase();
-
-    // Ordena os summaries por tamanho decrescente
     summaries.sort((a, b) => b.length - a.length);
 
-    // Faz a correspondência com includes nos dois sentidos
-    const produtoEncontrado = summaries.find(s => {
-      const sLower = s.toLowerCase();
-      return summaryLower.includes(sLower) || sLower.includes(summaryLower);
-    });
-
-    console.log("📨 Summary recebido:", summary);
+    const produtoEncontrado = summaries.find(s =>
+      summaryLower.includes(s.toLowerCase()) || s.toLowerCase().includes(summaryLower)
+    );
 
     if (produtoEncontrado) {
-      console.log("✅ Produto encontrado:", produtoEncontrado);
       return res.status(200).json({
         produto: produtoEncontrado,
         summaryRecebido: summary,
+        criadoAutomaticamente: false
       });
-    } else {
-      console.log("❌ Nenhum produto encontrado");
+    }
+
+    const produtoExtraido = await extrairProdutoDoSummary(summary);
+    if (!produtoExtraido) {
       return res.status(200).json({
         produto: "Não encontrado",
         summaryRecebido: summary,
-        summariesDoProjeto: summaries
+        error: "Produto não pôde ser extraído automaticamente"
       });
     }
+
+    const novaIssueKey = await criarIssueNoJira(produtoExtraido, auth, JIRA_PROJECT_KEY, JIRA_BASE_URL);
+    await adicionarComentarioNaIssue(
+      issueKey,
+      `Produto "${produtoExtraido}" não foi encontrado e foi criado automaticamente como ${novaIssueKey}.`,
+      auth,
+      JIRA_BASE_URL
+    );
+
+    await atualizarCampoProdutoNaIssue(issueKey, produtoExtraido, auth, JIRA_BASE_URL);
+
+    return res.status(200).json({
+      produto: produtoExtraido,
+      criadoAutomaticamente: true,
+      novaIssue: novaIssueKey,
+      summaryRecebido: summary,
+      atualizadoNaIssueOriginal: true
+    });
+
   } catch (error) {
-    console.error("❗ Erro ao buscar dados do Jira:", error.message);
-    return res.status(500).json({ error: "Erro ao buscar dados do Jira" });
+    console.error("❗ Erro geral:", error.message);
+    return res.status(500).json({ error: "Erro interno ao processar requisição" });
   }
 }
