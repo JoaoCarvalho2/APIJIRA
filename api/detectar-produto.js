@@ -22,42 +22,46 @@ async function extrairProdutoDoSummary(summary) {
   }
 }
 
-// 2. Buscar opções do campo
-async function buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl) {
+// 2. Buscar todas as opções de campo (não só do contexto)
+async function buscarTodasOpcoesDoCampo(customFieldId, auth, baseUrl) {
   const response = await axios.get(
-    `${baseUrl}/rest/api/3/field/${customFieldId}/context/${contextId}/option`,
-    { auth }
+    `${baseUrl}/rest/api/3/field/${customFieldId}/context/option/suggestions/edit`,
+    {
+      auth,
+      params: {
+        fieldId: customFieldId,
+        // O Jira aceita busca parcial via `query`, mas deixamos vazio para trazer todas
+      }
+    }
   );
-  return response.data.values || [];
+  return response.data?.suggestedOptions || [];
 }
 
-
-// 3. Criar nova opção no campo
+// 3. Criar nova opção no campo (tratando duplicadas)
 async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, baseUrl) {
   const body = {
     options: [{ value: novoValor }]
   };
 
-  await axios.post(
-    `${baseUrl}/rest/api/3/field/${customFieldId}/context/${contextId}/option`,
-    body,
-    { auth }
-  );
+  try {
+    await axios.post(
+      `${baseUrl}/rest/api/3/field/${customFieldId}/context/${contextId}/option`,
+      body,
+      { auth }
+    );
+  } catch (error) {
+    const mensagem = error.response?.data?.errorMessages?.[0] || "";
+    if (mensagem.includes("must be unique in its field")) {
+      console.warn(`⚠️ Opção "${novoValor}" já existe. Ignorando criação.`);
+      return;
+    }
+    throw error;
+  }
 }
 
 // 4. Atualizar campo na issue
 async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
   const customFieldId = "customfield_10878";
-
-  const contextId = "11104";
-  const opcoes = await buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl);
-
-  const existe = opcoes.some(opt => opt.value.toLowerCase() === produto.toLowerCase());
-
-  if (!existe) {
-    const contextId = "11104"; // ID fixo do contexto padrão global
-    await criarOpcaoNoCampo(customFieldId, contextId, produto, auth, baseUrl);
-  }
 
   await axios.put(
     `${baseUrl}/rest/api/3/issue/${issueKey}`,
@@ -93,7 +97,17 @@ async function adicionarComentarioNaIssue(issueKey, comentario, auth, baseUrl) {
   );
 }
 
-// 7. Handler principal
+// 7. Comparação aproximada (case insensitive)
+function encontrarProdutoSemelhante(nome, lista) {
+  const nomeLower = nome.toLowerCase();
+  return lista.find(
+    opt => opt.value.toLowerCase() === nomeLower ||
+           nomeLower.includes(opt.value.toLowerCase()) ||
+           opt.value.toLowerCase().includes(nomeLower)
+  );
+}
+
+// 8. Handler principal
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido" });
@@ -112,9 +126,10 @@ export default async function handler(req, res) {
   const baseUrl = process.env.JIRA_BASE_URL;
   const projectKey = process.env.JIRA_PROJECT_KEY;
   const customFieldId = "customfield_10878";
+  const contextId = "11104"; // contexto fixo (único agora)
 
   try {
-    // Buscar todas as issues do projeto
+    // 🔍 Buscar todas as issues do projeto
     let allIssues = [];
     let startAt = 0;
     const maxResults = 100;
@@ -147,6 +162,7 @@ export default async function handler(req, res) {
       });
     }
 
+    // ➤ Usar Gemini para extrair produto
     const produtoExtraido = await extrairProdutoDoSummary(summary);
     if (!produtoExtraido) {
       return res.status(200).json({
@@ -155,17 +171,28 @@ export default async function handler(req, res) {
       });
     }
 
+    // 🔍 Verificar se produto extraído já existe nas opções do campo
+    const todasOpcoes = await buscarTodasOpcoesDoCampo(customFieldId, auth, baseUrl);
+    const similar = encontrarProdutoSemelhante(produtoExtraido, todasOpcoes);
+
+    const valorFinal = similar?.value || produtoExtraido;
+
+    if (!similar) {
+      await criarOpcaoNoCampo(customFieldId, contextId, produtoExtraido, auth, baseUrl);
+    }
+
     const novaIssueKey = await criarIssueNoJira(produtoExtraido, auth, projectKey, baseUrl);
-    await atualizarCampoProdutoNaIssue(issueKey, produtoExtraido, auth, baseUrl);
+
+    await atualizarCampoProdutoNaIssue(issueKey, valorFinal, auth, baseUrl);
     await adicionarComentarioNaIssue(
       issueKey,
-      `Produto "${produtoExtraido}" não foi encontrado e foi criado automaticamente como ${novaIssueKey}.`,
+      `Produto "${valorFinal}" não foi encontrado nas issues e foi criado automaticamente como ${novaIssueKey}.`,
       auth,
       baseUrl
     );
 
     return res.status(200).json({
-      produto: produtoExtraido,
+      produto: valorFinal,
       criadoAutomaticamente: true,
       novaIssue: novaIssueKey,
       atualizadoNaIssueOriginal: true
