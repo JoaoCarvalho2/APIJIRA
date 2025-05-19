@@ -180,8 +180,11 @@ export default async function handler(req, res) {
       atualizadoNaIssueOriginal: true
     });
 
-  } catch (error) {
-    console.error("❗ Erro geral:", error.message);
-    return res.status(500).json({ error: "Erro interno ao processar requisição" });
-  }
+} catch (error) {
+  console.error("❗ Erro geral:", error.response?.data || error.message || error);
+  return res.status(500).json({
+    error: "Erro interno ao processar requisição",
+    details: error.response?.data || error.message || error
+  });
+}
 }
