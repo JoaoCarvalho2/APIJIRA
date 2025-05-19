@@ -11,7 +11,9 @@ async function extrairProdutoDoSummary(summary) {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }]
+      })
     });
 
     const data = await response.json();
@@ -22,7 +24,7 @@ async function extrairProdutoDoSummary(summary) {
   }
 }
 
-// 2. Criação de issue
+// 2. Criar nova issue no Jira (quando produto não é encontrado)
 async function criarIssueNoJira(produto, auth, projectKey, baseUrl) {
   const issueData = {
     fields: {
@@ -36,7 +38,7 @@ async function criarIssueNoJira(produto, auth, projectKey, baseUrl) {
   return response.data.key;
 }
 
-// 3. Comentário
+// 3. Adicionar comentário na issue original
 async function adicionarComentarioNaIssue(issueKey, comentario, auth, baseUrl) {
   await axios.post(
     `${baseUrl}/rest/api/3/issue/${issueKey}/comment`,
@@ -45,7 +47,7 @@ async function adicionarComentarioNaIssue(issueKey, comentario, auth, baseUrl) {
   );
 }
 
-// 4. Atualizar campo personalizado
+// 4. Obter opções do campo customizado
 async function buscarOpcoesDoCampo(customFieldId, auth, baseUrl) {
   const response = await axios.get(
     `${baseUrl}/rest/api/3/field/${customFieldId}/context/option`,
@@ -54,18 +56,21 @@ async function buscarOpcoesDoCampo(customFieldId, auth, baseUrl) {
   return response.data.values || [];
 }
 
+// 5. Buscar contexto do campo personalizado (não global)
 async function buscarContextoDoCampo(customFieldId, auth, baseUrl) {
   const response = await axios.get(
     `${baseUrl}/rest/api/3/field/${customFieldId}/context`,
     { auth }
   );
-  return response.data.values?.[0]?.id;
+
+  const contextos = response.data.values || [];
+  const contextoValido = contextos.find(ctx => !ctx.isGlobalContext);
+  return contextoValido?.id;
 }
 
+// 6. Criar nova opção no campo customizado
 async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, baseUrl) {
-  const body = {
-    options: [{ value: novoValor }]
-  };
+  const body = { options: [{ value: novoValor }] };
 
   await axios.post(
     `${baseUrl}/rest/api/3/field/${customFieldId}/context/${contextId}/option`,
@@ -74,6 +79,7 @@ async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, base
   );
 }
 
+// 7. Atualizar campo "Produto" na issue original
 async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
   const customFieldId = "customfield_10878";
 
@@ -82,6 +88,7 @@ async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
 
   if (!existe) {
     const contextId = await buscarContextoDoCampo(customFieldId, auth, baseUrl);
+    if (!contextId) throw new Error("Nenhum contexto válido encontrado para o campo personalizado.");
     await criarOpcaoNoCampo(customFieldId, contextId, produto, auth, baseUrl);
   }
 
@@ -96,7 +103,7 @@ async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
   );
 }
 
-// 5. Handler principal
+// 8. Função principal
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido" });
@@ -116,7 +123,7 @@ export default async function handler(req, res) {
 
   const auth = {
     username: JIRA_EMAIL,
-    password: JIRA_API_TOKEN,
+    password: JIRA_API_TOKEN
   };
 
   try {
@@ -154,6 +161,7 @@ export default async function handler(req, res) {
       });
     }
 
+    // Produto não encontrado nos summaries → tentar extrair com Gemini
     const produtoExtraido = await extrairProdutoDoSummary(summary);
     if (!produtoExtraido) {
       return res.status(200).json({
@@ -163,6 +171,7 @@ export default async function handler(req, res) {
       });
     }
 
+    // Criar issue com novo produto e atualizar original
     const novaIssueKey = await criarIssueNoJira(produtoExtraido, auth, JIRA_PROJECT_KEY, JIRA_BASE_URL);
     await atualizarCampoProdutoNaIssue(issueKey, produtoExtraido, auth, JIRA_BASE_URL);
     await adicionarComentarioNaIssue(
@@ -180,11 +189,11 @@ export default async function handler(req, res) {
       atualizadoNaIssueOriginal: true
     });
 
-} catch (error) {
-  console.error("❗ Erro geral:", error.response?.data || error.message || error);
-  return res.status(500).json({
-    error: "Erro interno ao processar requisição",
-    details: error.response?.data || error.message || error
-  });
-}
+  } catch (error) {
+    console.error("❗ Erro geral:", error.response?.data || error.message || error);
+    return res.status(500).json({
+      error: "Erro interno ao processar requisição",
+      details: error.response?.data || error.message || error
+    });
+  }
 }
