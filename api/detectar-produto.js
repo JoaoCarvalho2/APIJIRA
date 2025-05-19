@@ -1,6 +1,6 @@
 import axios from "axios";
 
-// 1. Extrair produto com Gemini
+// 1. Extrair nome do produto com Gemini
 async function extrairProdutoDoSummary(summary) {
   const API_KEY = process.env.GEMINI_API_KEY;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${API_KEY}`;
@@ -22,22 +22,16 @@ async function extrairProdutoDoSummary(summary) {
   }
 }
 
-// 2. Buscar todas as opções de campo (não só do contexto)
-async function buscarTodasOpcoesDoCampo(customFieldId, auth, baseUrl) {
+// 2. Buscar opções do campo no contexto correto
+async function buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl) {
   const response = await axios.get(
-    `${baseUrl}/rest/api/3/field/${customFieldId}/context/option/suggestions/edit`,
-    {
-      auth,
-      params: {
-        fieldId: customFieldId,
-        // O Jira aceita busca parcial via `query`, mas deixamos vazio para trazer todas
-      }
-    }
+    `${baseUrl}/rest/api/3/field/${customFieldId}/context/${contextId}/option`,
+    { auth }
   );
-  return response.data?.suggestedOptions || [];
+  return response.data.values || [];
 }
 
-// 3. Criar nova opção no campo (tratando duplicadas)
+// 3. Criar nova opção no campo
 async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, baseUrl) {
   const body = {
     options: [{ value: novoValor }]
@@ -59,7 +53,7 @@ async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, base
   }
 }
 
-// 4. Atualizar campo na issue
+// 4. Atualizar campo da issue
 async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
   const customFieldId = "customfield_10878";
 
@@ -74,7 +68,7 @@ async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
   );
 }
 
-// 5. Criar nova issue no projeto
+// 5. Criar issue
 async function criarIssueNoJira(produto, auth, projectKey, baseUrl) {
   const issueData = {
     fields: {
@@ -97,7 +91,7 @@ async function adicionarComentarioNaIssue(issueKey, comentario, auth, baseUrl) {
   );
 }
 
-// 7. Comparação aproximada (case insensitive)
+// 7. Comparação de nome parecidos
 function encontrarProdutoSemelhante(nome, lista) {
   const nomeLower = nome.toLowerCase();
   return lista.find(
@@ -126,10 +120,10 @@ export default async function handler(req, res) {
   const baseUrl = process.env.JIRA_BASE_URL;
   const projectKey = process.env.JIRA_PROJECT_KEY;
   const customFieldId = "customfield_10878";
-  const contextId = "11104"; // contexto fixo (único agora)
+  const contextId = "11104"; // único contexto usado
 
   try {
-    // 🔍 Buscar todas as issues do projeto
+    // 🔍 Buscar todas as summaries das issues do projeto
     let allIssues = [];
     let startAt = 0;
     const maxResults = 100;
@@ -162,7 +156,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // ➤ Usar Gemini para extrair produto
+    // ➤ Extrair com Gemini
     const produtoExtraido = await extrairProdutoDoSummary(summary);
     if (!produtoExtraido) {
       return res.status(200).json({
@@ -171,9 +165,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // 🔍 Verificar se produto extraído já existe nas opções do campo
-    const todasOpcoes = await buscarTodasOpcoesDoCampo(customFieldId, auth, baseUrl);
-    const similar = encontrarProdutoSemelhante(produtoExtraido, todasOpcoes);
+    // 🔍 Verificar se produto já existe no contexto
+    const opcoes = await buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl);
+    const similar = encontrarProdutoSemelhante(produtoExtraido, opcoes);
 
     const valorFinal = similar?.value || produtoExtraido;
 
