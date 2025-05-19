@@ -23,13 +23,14 @@ async function extrairProdutoDoSummary(summary) {
 }
 
 // 2. Buscar opções do campo
-async function buscarOpcoesDoCampo(customFieldId, auth, baseUrl) {
+async function buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl) {
   const response = await axios.get(
-    `${baseUrl}/rest/api/3/field/${customFieldId}/context/option`,
+    `${baseUrl}/rest/api/3/field/${customFieldId}/context/${contextId}/option`,
     { auth }
   );
   return response.data.values || [];
 }
+
 
 // 3. Criar nova opção no campo
 async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, baseUrl) {
@@ -48,7 +49,9 @@ async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, base
 async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
   const customFieldId = "customfield_10878";
 
-  const opcoes = await buscarOpcoesDoCampo(customFieldId, auth, baseUrl);
+  const contextId = "11104";
+  const opcoes = await buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl);
+
   const existe = opcoes.some(opt => opt.value.toLowerCase() === produto.toLowerCase());
 
   if (!existe) {
