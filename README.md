@@ -31,3 +31,39 @@ Este projeto é uma API Node.js que automatiza o preenchimento de campos persona
 git clone https://github.com/seu-usuario/jira-product-matcher.git
 cd jira-product-matcher
 npm install
+
+
+🔐 Variáveis de Ambiente
+Crie um arquivo .env com os seguintes dados:
+
+env
+Copiar
+Editar
+JIRA_BASE_URL=https://suaempresa.atlassian.net
+JIRA_EMAIL=seu-email@empresa.com
+JIRA_API_TOKEN=xxxxxxx
+JIRA_PROJECT_KEY=IMP
+GEMINI_API_KEY=AIzaSy...  # Obtido no Google AI Studio
+
+📡 Endpoint
+POST /api/produto
+Body:
+{
+  "summary": "Erro ao integrar com Microsoft Teams",
+  "issueKey": "IMP-123"
+}
+
+📘 Comentário Exemplo na Issue
+Produto "Microsoft Teams" não foi encontrado nas issues e foi criado automaticamente como IMP-789.
+
+🧠 Sobre o Gemini 1.5 Flash
+Utilizamos o Gemini 1.5 Flash, um modelo de linguagem da Google:
+
+Para extrair o nome do produto do resumo de texto.
+
+Validar automaticamente se o nome representa um software real.
+
+Evitar preenchimentos genéricos como “problema”, “sistema” ou frases completas.
+
+Desenvolvido por [Seu Nome]
+📫 Contato: [seuemail@dominio.com]
