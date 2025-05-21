@@ -1,123 +1,106 @@
-# 🧠 APIJIRA - API de Detecção de Produto via Jira Cloud
+🧠 Jira Auto Product Matcher with Gemini
+Este projeto é uma API Node.js que automatiza o preenchimento de campos personalizados no Jira com base no resumo (summary) de uma issue. Se nenhum produto conhecido for encontrado, a API utiliza Gemini 1.5 Flash para extrair e validar um novo nome de produto de forma inteligente.
 
-Esta API recebe um resumo (`summary`) e tenta identificar a qual produto ele pertence, com base em issues de um projeto específico no Jira Cloud. Útil para automações, workflows e categorização de chamados de forma inteligente.
+✨ Funcionalidades
+🔍 Compara o resumo da issue com summaries existentes no projeto Jira.
 
----
+🤖 Utiliza Gemini para extrair nomes de produtos do texto, validando se são softwares reais.
 
-## 🚀 Tecnologias Utilizadas
+⚙️ Cria nova opção no campo personalizado "Produto" caso não exista.
 
-- [Node.js](https://nodejs.org/)
-- [Next.js API Routes](https://nextjs.org/docs/api-routes/introduction)
-- [Axios](https://axios-http.com/)
-- Jira REST API (v3)
+🛠️ Cria uma nova issue com o nome do produto caso ele seja novo.
 
----
+🗂️ Atualiza a issue original com o campo "Produto".
 
-## 📦 Estrutura
+💬 Adiciona um comentário automático com detalhes da criação.
 
-### Endpoint
+🛠️ Tecnologias Utilizadas
+Node.js + JavaScript
 
-`POST /api/detectar-produto`
+Axios
 
----
+API do Jira (Jira Cloud REST API v3)
 
-## 📥 Requisição
+Google Gemini 1.5 Flash (via Generative Language API)
 
-```json
+Vercel (ou qualquer plataforma serverless)
+
+📦 Instalação
+Clone o repositório:
+
+bash
+Copiar
+Editar
+git clone https://github.com/seu-usuario/jira-product-matcher.git
+cd jira-product-matcher
+Instale as dependências:
+
+bash
+Copiar
+Editar
+npm install
+🔐 Variáveis de Ambiente (.env)
+Crie um arquivo .env com as seguintes variáveis:
+
+env
+Copiar
+Editar
+JIRA_BASE_URL=https://suaempresa.atlassian.net
+JIRA_EMAIL=seu-email@empresa.com
+JIRA_API_TOKEN=xxxxxxx
+JIRA_PROJECT_KEY=IMP
+GEMINI_API_KEY=AIzaSy...  # Obtido no Google AI Studio
+🔁 Fluxo da Lógica
+mermaid
+Copiar
+Editar
+graph TD
+    A[Recebe resumo de issue] --> B[Busca summaries do projeto]
+    B --> C{Resumo semelhante?}
+    C -- Sim --> D[Atualiza campo "Produto"]
+    C -- Não --> E[Usa Gemini para extrair nome]
+    E --> F{É software real?}
+    F -- Não --> G[Retorna erro de extração]
+    F -- Sim --> H[Verifica se existe no campo]
+    H -- Existe --> I[Atualiza campo]
+    H -- Não existe --> J[Cria opção + Cria nova issue]
+    J --> K[Atualiza campo + Adiciona comentário]
+📡 Endpoints
+POST /api/produto
+Corpo da requisição:
+json
+Copiar
+Editar
 {
-  "summary": "Re: 123456 - Dúvidas sobre o LABELVIEW Pro"
+  "summary": "Erro ao integrar com Microsoft Teams",
+  "issueKey": "IMP-123"
 }
-```
-
-- `summary` (string): Campo obrigatório contendo o resumo da issue ou chamado a ser analisado.
-
----
-
-## 📤 Resposta
-
-### ✅ Produto encontrado
-
-```json
+Resposta (exemplo):
+json
+Copiar
+Editar
 {
-  "produto": "LABELVIEW Pro",
-  "summaryRecebido": "Re: 123456 - Dúvidas sobre o LABELVIEW Pro"
+  "produto": "Microsoft Teams",
+  "criadoAutomaticamente": false,
+  "atualizadoNaIssueOriginal": true
 }
-```
+📘 Exemplo de Comentário Adicionado
+Produto "Microsoft Teams" não foi encontrado nas issues e foi criado automaticamente como IMP-789.
 
-### ❌ Produto não encontrado
+🧠 Sobre o Gemini 1.5 Flash
+Utilizamos o Gemini 1.5 Flash, um LLM rápido e avançado do Google, para:
 
-```json
-{
-  "produto": "Não encontrado",
-  "summaryRecebido": "Re: 123456 - Dúvidas sobre o Produto Desconhecido",
-  "summariesDoProjeto": [
-    "LABELVIEW Pro",
-    "Lumion",
-    "ZWCAD Professional",
-    ...
-  ]
-}
-```
+Extrair o nome do produto do campo summary.
 
----
+Validar se o nome extraído representa um software real, usando prompt refinado e resposta binária ("SIM" ou "NÃO").
 
-## 🔐 Variáveis de Ambiente
+🚧 Próximos Passos
+ Adicionar cache para evitar consultas repetidas ao Gemini
 
-Crie um arquivo `.env.local` com as seguintes variáveis:
+ Log e dashboard de uso da IA
 
-```env
-JIRA_EMAIL=seu_email@dominio.com
-JIRA_API_TOKEN=seu_token_api
-JIRA_BASE_URL= (sua instância da atlassian)
-JIRA_PROJECT_KEY= (Sigla do seu projeto)
-```
+ Integração opcional com SerpAPI para validação via Google Search
 
-Você pode gerar um token de API aqui: [https://id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
-
----
-
-## 🧠 Como funciona
-
-1. A API faz requisições paginadas ao Jira para buscar **todos os summaries** das issues no projeto definido.
-2. Compara o `summary` enviado com os summaries das issues existentes.
-3. Retorna o primeiro produto correspondente encontrado (baseado em uma verificação `includes`, sem case sensitive).
-
----
-
-## 🔍 Melhorias Futuras
-
-- ✅ Paginação correta com `startAt` para garantir busca completa
-- 🔄 Substituir `includes()` por comparação com fuzzy search (ex: Levenshtein)
-- 🧠 Machine learning para categorização mais precisa (opcional)
-- 📁 Cache com Redis ou Vercel KV para evitar chamadas repetidas ao Jira
-
----
-
-## 🛠 Exemplo de uso com curl
-
-```bash
-curl -X POST https://seu-endpoint.vercel.app/api/detectar-produto   -H "Content-Type: application/json"   -d '{"summary": "Erro ao abrir o Lumion"}'
-```
-
----
-
-## 🧪 Testes e Logs
-
-Os logs são exibidos via `console.log` para depuração durante execução:
-
-- `🔗 Buscando do Jira:` URL usada
-- `📋 Summaries:` lista de summaries do projeto
-- `✅ Produto encontrado:` nome do produto detectado
-- `❌ Produto não encontrado`
-
----
-
-## 👤 Autor
-
-Desenvolvido por JoãoCarvalho.
-
----
-
-## 🧾 Licença
-
-MIT - Utilize e modifique livremente.
+👨‍💻 Autor
+Desenvolvido por [Seu Nome] — projeto em desenvolvimento para automação e inteligência aplicada no Jira.
+📫 Contato: [seuemail@dominio.com]
