@@ -37,9 +37,13 @@ npm install
 Crie um arquivo .env com os seguintes dados:
 
 JIRA_BASE_URL=https://suaempresa.atlassian.net
+
 JIRA_EMAIL=seu-email@empresa.com
+
 JIRA_API_TOKEN=xxxxxxx
+
 JIRA_PROJECT_KEY= (sua project key)
+
 GEMINI_API_KEY=AIzaSy...  # Obtido no Google AI Studio
 
 🔁 Fluxo da Lógica
