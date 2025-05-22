@@ -31,26 +31,47 @@ Este projeto é uma API Node.js que automatiza o preenchimento de campos persona
 git clone https://github.com/seu-usuario/jira-product-matcher.git
 cd jira-product-matcher
 npm install
-
+```
 
 🔐 Variáveis de Ambiente
 Crie um arquivo .env com os seguintes dados:
 
-env
-Copiar
-Editar
 JIRA_BASE_URL=https://suaempresa.atlassian.net
 JIRA_EMAIL=seu-email@empresa.com
 JIRA_API_TOKEN=xxxxxxx
-JIRA_PROJECT_KEY=IMP
+JIRA_PROJECT_KEY= (sua project key)
 GEMINI_API_KEY=AIzaSy...  # Obtido no Google AI Studio
+
+🔁 Fluxo da Lógica
+graph TD
+    A[Recebe resumo de issue] --> B[Busca summaries do projeto]
+    B --> C{Resumo semelhante?}
+    C -- Sim --> D[Atualiza campo "Produto"]
+    C -- Não --> E[Usa Gemini para extrair nome]
+    E --> F{É software real?}
+    F -- Não --> G[Retorna erro de extração]
+    F -- Sim --> H[Verifica se existe no campo]
+    H -- Existe --> I[Atualiza campo]
+    H -- Não existe --> J[Cria opção + Cria nova issue]
+    J --> K[Atualiza campo + Adiciona comentário]
+
+💡 Obs: Caso o nome extraído já exista, ele é reaproveitado. Se for semelhante a outro existente, o sistema evita duplicação.
 
 📡 Endpoint
 POST /api/produto
 Body:
+
 {
   "summary": "Erro ao integrar com Microsoft Teams",
   "issueKey": "IMP-123"
+}
+
+Resposta de exemplo:
+
+{
+  "produto": "Microsoft Teams",
+  "criadoAutomaticamente": false,
+  "atualizadoNaIssueOriginal": true
 }
 
 📘 Comentário Exemplo na Issue
@@ -65,5 +86,16 @@ Validar automaticamente se o nome representa um software real.
 
 Evitar preenchimentos genéricos como “problema”, “sistema” ou frases completas.
 
-Desenvolvido por [Seu Nome]
-📫 Contato: [seuemail@dominio.com]
+🚧 Próximos Passos
+ Adicionar cache para evitar consultas repetidas ao Gemini
+
+ Log e dashboard de uso da IA
+
+ Integração com SerpAPI para validação no Google Search
+
+ Suporte a múltiplos contextos personalizados no Jira
+
+👨‍💻 Autor
+Desenvolvido por João Victor
+📫 Contato: joaovictorbarbosadecarvalho@outlook.com
+
