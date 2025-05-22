@@ -66,8 +66,8 @@ POST /api/produto
 Body:
 
 {
-  "summary": "Erro ao integrar com Microsoft Teams",
-  "issueKey": "IMP-123"
+  "summary": "Erro ao integrar com Microsoft Teams",                         
+  "issueKey": "IMP-123"                     
 }
 
 Resposta de exemplo:
@@ -78,28 +78,28 @@ Resposta de exemplo:
   "atualizadoNaIssueOriginal": true
 }
 
-📘 Comentário Exemplo na Issue
-Produto "Microsoft Teams" não foi encontrado nas issues e foi criado automaticamente como IMP-789.
+📘 Comentário Exemplo na Issue                    
+Produto "Microsoft Teams" não foi encontrado nas issues e foi criado automaticamente como IMP-789.                                   
 
-🧠 Sobre o Gemini 1.5 Flash
-Utilizamos o Gemini 1.5 Flash, um modelo de linguagem da Google:
+🧠 Sobre o Gemini 1.5 Flash                                
+Utilizamos o Gemini 1.5 Flash, um modelo de linguagem da Google:                                
+  
+Para extrair o nome do produto do resumo de texto.                   
 
-Para extrair o nome do produto do resumo de texto.
+Validar automaticamente se o nome representa um software real.                    
 
-Validar automaticamente se o nome representa um software real.
+Evitar preenchimentos genéricos como “problema”, “sistema” ou frases completas.                  
 
-Evitar preenchimentos genéricos como “problema”, “sistema” ou frases completas.
+🚧 Próximos Passos                        
+ Adicionar cache para evitar consultas repetidas ao Gemini                 
 
-🚧 Próximos Passos
- Adicionar cache para evitar consultas repetidas ao Gemini
+ Log e dashboard de uso da IA                     
 
- Log e dashboard de uso da IA
+ Integração com SerpAPI para validação no Google Search                               
 
- Integração com SerpAPI para validação no Google Search
+ Suporte a múltiplos contextos personalizados no Jira                        
 
- Suporte a múltiplos contextos personalizados no Jira
-
-👨‍💻 Autor
-Desenvolvido por João Victor
-📫 Contato: joaovictorbarbosadecarvalho@outlook.com
+👨‍💻 Autor              
+Desenvolvido por João Victor                              
+📫 Contato: joaovictorbarbosadecarvalho@outlook.com                
 
