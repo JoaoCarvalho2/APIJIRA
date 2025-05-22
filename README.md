@@ -49,15 +49,15 @@ GEMINI_API_KEY=AIzaSy...  # Obtido no Google AI Studio
 🔁 Fluxo da Lógica
 graph TD
     A[Recebe resumo de issue] --> B[Busca summaries do projeto]
-    B --> C{Resumo semelhante?}
-    C -- Sim --> D[Atualiza campo "Produto"]
-    C -- Não --> E[Usa Gemini para extrair nome]
-    E --> F{É software real?}
-    F -- Não --> G[Retorna erro de extração]
-    F -- Sim --> H[Verifica se existe no campo]
-    H -- Existe --> I[Atualiza campo]
-    H -- Não existe --> J[Cria opção + Cria nova issue]
-    J --> K[Atualiza campo + Adiciona comentário]
+    B --> C{Resumo semelhante?}                                     
+    C -- Sim --> D[Atualiza campo "Produto"]                  
+    C -- Não --> E[Usa Gemini para extrair nome]               
+    E --> F{É software real?}                      
+    F -- Não --> G[Retorna erro de extração]                       
+    F -- Sim --> H[Verifica se existe no campo]                     
+    H -- Existe --> I[Atualiza campo]                          
+    H -- Não existe --> J[Cria opção + Cria nova issue]                  
+    J --> K[Atualiza campo + Adiciona comentário]                              
 
 💡 Obs: Caso o nome extraído já exista, ele é reaproveitado. Se for semelhante a outro existente, o sistema evita duplicação.
 
