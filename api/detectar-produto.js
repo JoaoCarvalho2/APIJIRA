@@ -193,6 +193,15 @@ export default async function handler(req, res) {
     if (!similar) {
       await criarOpcaoNoCampo(customFieldId, contextId, produtoExtraido, auth, baseUrl);
     }
+    if (!similar) {
+      await criarOpcaoNoCampo(customFieldId, contextId, produtoExtraido, auth, baseUrl);
+      // Aguarda a criação efetiva da opção antes de continuar
+      const novasOpcoes = await buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl);
+      const novaOpcao = encontrarProdutoSemelhante(produtoExtraido, novasOpcoes);
+      if (novaOpcao) {
+        valorFinal = novaOpcao.value;
+      }
+    }
 
     const novaIssueKey = await criarIssueNoJira(produtoExtraido, auth, projectKey, baseUrl);
 
