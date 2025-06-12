@@ -1,5 +1,25 @@
 import axios from "axios";
 
+// Função para normalizar texto (sem acento, caixa baixa, etc.)
+function normalizarTexto(texto) {
+  return texto
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+// Comparação de nomes semelhantes
+function encontrarProdutoSemelhante(nome, lista) {
+  const nomeNormalizado = normalizarTexto(nome);
+  return lista.find(opt => {
+    const optVal = normalizarTexto(opt.value);
+    return optVal === nomeNormalizado ||
+           nomeNormalizado.includes(optVal) ||
+           optVal.includes(nomeNormalizado);
+  });
+}
+
 // 1. Extrair e validar nome do produto com Gemini
 async function extrairProdutoValidoDoSummary(summary) {
   const API_KEY = process.env.GEMINI_API_KEY;
@@ -51,9 +71,7 @@ async function buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl) {
 
 // 3. Criar nova opção no campo
 async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, baseUrl) {
-  const body = {
-    options: [{ value: novoValor }]
-  };
+  const body = { options: [{ value: novoValor }] };
 
   try {
     await axios.post(
@@ -102,25 +120,14 @@ async function criarIssueNoJira(produto, auth, projectKey, baseUrl) {
 
 // 6. Adicionar comentário
 async function adicionarComentarioNaIssue(issueKey, comentario, auth, baseUrl) {
-  const corpo = comentario.replace(/"/g, '\\"'); // escapa aspas duplas
   await axios.post(
     `${baseUrl}/rest/api/3/issue/${issueKey}/comment`,
-    { body: corpo },
+    { body: comentario },
     { auth }
   );
 }
 
-// 7. Comparação de nomes semelhantes
-function encontrarProdutoSemelhante(nome, lista) {
-  const nomeLower = nome.toLowerCase();
-  return lista.find(
-    opt => opt.value.toLowerCase() === nomeLower ||
-           nomeLower.includes(opt.value.toLowerCase()) ||
-           opt.value.toLowerCase().includes(nomeLower)
-  );
-}
-
-// 8. Handler principal
+// 7. Handler principal
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido" });
@@ -186,22 +193,21 @@ export default async function handler(req, res) {
 
     // 🔍 Verificar se já existe no campo
     const opcoes = await buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl);
-    const similar = encontrarProdutoSemelhante(produtoExtraido, opcoes);
+    let opcaoExistente = encontrarProdutoSemelhante(produtoExtraido, opcoes);
 
-    const valorFinal = similar?.value || produtoExtraido;
+    let valorFinal = produtoExtraido;
 
-    if (!similar) {
+    if (!opcaoExistente) {
       await criarOpcaoNoCampo(customFieldId, contextId, produtoExtraido, auth, baseUrl);
-    }
-    if (!similar) {
-      await criarOpcaoNoCampo(customFieldId, contextId, produtoExtraido, auth, baseUrl);
-      // Aguarda a criação efetiva da opção antes de continuar
+      await new Promise(resolve => setTimeout(resolve, 1500)); // esperar 1.5s
       const novasOpcoes = await buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl);
-      const novaOpcao = encontrarProdutoSemelhante(produtoExtraido, novasOpcoes);
-      if (novaOpcao) {
-        valorFinal = novaOpcao.value;
+      opcaoExistente = encontrarProdutoSemelhante(produtoExtraido, novasOpcoes);
+      if (!opcaoExistente) {
+        throw new Error(`Nova opção "${produtoExtraido}" não foi localizada após criação.`);
       }
     }
+
+    valorFinal = opcaoExistente.value;
 
     const novaIssueKey = await criarIssueNoJira(produtoExtraido, auth, projectKey, baseUrl);
 
