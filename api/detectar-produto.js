@@ -5,6 +5,21 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// 4. Atualizar campo da issue
+async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
+  const customFieldId = "customfield_10878";
+
+  await axios.put(
+    `${baseUrl}/rest/api/3/issue/${issueKey}`,
+    {
+      fields: {
+        [customFieldId]: { value: produto }
+      }
+    },
+    { auth }
+  );
+}
+
 // 🎯 Regex: extrair o valor entre as barras
 function extrairEntreBarras(texto) {
   const match = texto.match(/^.+\s*\/\s*(.+?)\s*\/\s*\d+\s*$/);
