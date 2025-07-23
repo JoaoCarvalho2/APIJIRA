@@ -18,47 +18,40 @@ export default async function handler(req, res) {
   const customFieldId = 'customfield_10072';
 
   try {
-    const produto = await encontrarProduto(summary);
-    let valorFinal = produto;
-
+    const produto = await extrairProduto(summary);
     const opcoes = await buscarOpcoesCampo(customFieldId, auth, baseUrl);
     const existe = opcoes.some(opcao => opcao.value.toLowerCase() === produto.toLowerCase());
 
     if (!existe) {
       await criarOpcaoNoCampo(customFieldId, produto, auth, baseUrl);
-      await esperar(4000); // Aguarda 4 segundos para o Jira registrar a nova opção
+      await esperar(4000); // Aguarda o Jira registrar
     }
 
-    await atualizarCampoComRetry(issueKey, valorFinal, auth, baseUrl);
-
+    await atualizarCampoComRetry(issueKey, produto, auth, baseUrl);
     res.status(200).json({ sucesso: true, produto });
   } catch (error) {
-    console.error('Erro geral:', error);
-    res.status(500).json({ erro: error.message });
+    console.error('Erro:', error);
+    res.status(500).json({ error: error.message });
   }
 }
 
-async function encontrarProduto(summary) {
-  const prompt = `Extraia apenas o nome do produto ou software mencionado nesse texto:
-"""
+async function extrairProduto(summary) {
+  const prompt = `Extraia apenas o nome do produto ou software mencionado no texto abaixo. Se não houver produto, responda somente "Indefinido".
+\n"""
 ${summary}
-"""
+"""`;
 
-Se não houver produto, responda apenas com "Indefinido".`;
-
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   const result = await model.generateContent(prompt);
   const response = await result.response;
   let produto = response.text().trim();
 
-  // Se Gemini falhar, aplica regex para tentar capturar nome do software
   if (!produto || produto.toLowerCase() === 'indefinido') {
     const match = summary.match(/\/\s*([^/]+)\s*\/\s*\d+$/);
     if (match) {
       produto = match[1].trim();
-      console.warn('Fallback para regex. Produto extraído:', produto);
     } else {
-      throw new Error('Não foi possível extrair o nome do produto.');
+      throw new Error('Produto não identificado via Gemini ou regex');
     }
   }
 
@@ -66,24 +59,28 @@ Se não houver produto, responda apenas com "Indefinido".`;
 }
 
 async function buscarOpcoesCampo(customFieldId, auth, baseUrl) {
-  const response = await axios.get(`${baseUrl}/rest/api/3/field/${customFieldId}/context/option`, { auth });
-  return response.data.values || [];
+  const url = `${baseUrl}/rest/api/3/field/${customFieldId}/context/option`;
+  const { data } = await axios.get(url, { auth });
+  return data.values || [];
 }
 
 async function criarOpcaoNoCampo(customFieldId, nome, auth, baseUrl) {
-  const response = await axios.get(`${baseUrl}/rest/api/3/field/${customFieldId}/context`, { auth });
-  const contextId = response.data.values[0].id;
+  const contextUrl = `${baseUrl}/rest/api/3/field/${customFieldId}/context`;
+  const contextRes = await axios.get(contextUrl, { auth });
+  const contextId = contextRes.data.values[0].id;
 
+  const optionUrl = `${baseUrl}/rest/api/3/field/${customFieldId}/context/${contextId}/option`;
   await axios.post(
-    `${baseUrl}/rest/api/3/field/${customFieldId}/context/${contextId}/option`,
+    optionUrl,
     { options: [{ value: nome }] },
     { auth }
   );
 }
 
 async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
+  const issueUrl = `${baseUrl}/rest/api/3/issue/${issueKey}`;
   await axios.put(
-    `${baseUrl}/rest/api/3/issue/${issueKey}`,
+    issueUrl,
     {
       fields: {
         customfield_10072: { value: produto },
@@ -99,13 +96,9 @@ async function atualizarCampoComRetry(issueKey, produto, auth, baseUrl, tentativ
       await atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl);
       return;
     } catch (error) {
-      const mensagem = error.response?.data || error.message;
-      console.warn(`Tentativa ${i + 1} falhou: ${mensagem}`);
-      if (i < tentativas - 1) {
-        await esperar(delayMs);
-      } else {
-        throw new Error(`Falha ao atualizar campo após ${tentativas} tentativas.`);
-      }
+      console.warn(`Erro ao atualizar (tentativa ${i + 1}): ${error.message}`);
+      if (i < tentativas - 1) await esperar(delayMs);
+      else throw new Error('Erro ao atualizar campo após várias tentativas');
     }
   }
 }
