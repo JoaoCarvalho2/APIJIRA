@@ -1,10 +1,31 @@
 import axios from "axios";
 
-// 1. Extrair e validar nome do produto com Gemini
+// 1. Extrair e validar nome do produto
 async function extrairProdutoValidoDoSummary(summary) {
   const API_KEY = process.env.GEMINI_API_KEY;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-latest:generateContent?key=${API_KEY}`;
 
+  // Tenta extrair com regex
+  const match = summary.match(/^(.+?)\s*\/\s*(.+?)\s*\/\s*(\d+)\s*$/);
+  const nomeSoftwareRegex = match ? match[2].trim() : null;
+
+  if (nomeSoftwareRegex) {
+    const validacaoPrompt = `"${nomeSoftwareRegex}" é um software real, ferramenta ou produto de tecnologia conhecido? Responda apenas com "SIM" ou "NÃO".`;
+
+    const responseValidacao = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: validacaoPrompt }] }] })
+    });
+
+    const validacao = responseValidacao?.ok
+      ? (await responseValidacao.json())?.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase()
+      : "NÃO";
+
+    if (validacao === "SIM") return { produto: nomeSoftwareRegex, viaRegex: true };
+  }
+
+  // Se regex não funcionou, tenta Gemini
   const extracaoPrompt = `A partir deste resumo, extraia apenas o nome do produto ou software mencionado:\n\n"${summary}"\n\nA resposta deve conter apenas o nome do produto ou software, sem explicações.`;
 
   try {
@@ -18,7 +39,7 @@ async function extrairProdutoValidoDoSummary(summary) {
       ? (await responseExtracao.json())?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
       : null;
 
-    if (!produto) return null;
+    if (!produto) return nomeSoftwareRegex ? { produto: nomeSoftwareRegex, viaRegex: true } : null;
 
     const validacaoPrompt = `"${produto}" é um software real, ferramenta ou produto de tecnologia conhecido? Responda apenas com "SIM" ou "NÃO".`;
 
@@ -32,15 +53,17 @@ async function extrairProdutoValidoDoSummary(summary) {
       ? (await responseValidacao.json())?.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase()
       : "NÃO";
 
-    return validacao === "SIM" ? produto : null;
+    if (validacao === "SIM") return { produto, viaRegex: false };
+
+    // Fallback final: tenta retornar o nome do meio via regex mesmo sem validar
+    return nomeSoftwareRegex ? { produto: nomeSoftwareRegex, viaRegex: true } : null;
 
   } catch (error) {
     console.error("❗ Erro ao consultar Gemini:", error.message);
-    return null;
+    return nomeSoftwareRegex ? { produto: nomeSoftwareRegex, viaRegex: true } : null;
   }
 }
 
-// 2. Buscar opções do campo no contexto
 async function buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl) {
   const response = await axios.get(
     `${baseUrl}/rest/api/3/field/${customFieldId}/context/${contextId}/option`,
@@ -49,7 +72,6 @@ async function buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl) {
   return response.data.values || [];
 }
 
-// 3. Criar nova opção no campo
 async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, baseUrl) {
   const body = {
     options: [{ value: novoValor }]
@@ -71,7 +93,6 @@ async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, base
   }
 }
 
-// 4. Atualizar campo da issue
 async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
   const customFieldId = "customfield_10878";
 
@@ -86,7 +107,6 @@ async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
   );
 }
 
-// 5. Criar issue no Jira
 async function criarIssueNoJira(produto, auth, projectKey, baseUrl) {
   const issueData = {
     fields: {
@@ -100,9 +120,8 @@ async function criarIssueNoJira(produto, auth, projectKey, baseUrl) {
   return response.data.key;
 }
 
-// 6. Adicionar comentário
 async function adicionarComentarioNaIssue(issueKey, comentario, auth, baseUrl) {
-  const corpo = comentario.replace(/"/g, '\\"'); // escapa aspas duplas
+  const corpo = comentario.replace(/"/g, '\\"');
   await axios.post(
     `${baseUrl}/rest/api/3/issue/${issueKey}/comment`,
     { body: corpo },
@@ -110,7 +129,6 @@ async function adicionarComentarioNaIssue(issueKey, comentario, auth, baseUrl) {
   );
 }
 
-// 7. Comparação de nomes semelhantes
 function encontrarProdutoSemelhante(nome, lista) {
   const nomeLower = nome.toLowerCase();
   return lista.find(
@@ -120,7 +138,6 @@ function encontrarProdutoSemelhante(nome, lista) {
   );
 }
 
-// 8. Handler principal
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido" });
@@ -142,7 +159,6 @@ export default async function handler(req, res) {
   const contextId = "11104";
 
   try {
-    // 🔍 Buscar todas as summaries das issues do projeto
     let allIssues = [];
     let startAt = 0;
     const maxResults = 100;
@@ -175,26 +191,24 @@ export default async function handler(req, res) {
       });
     }
 
-    // ➤ Extrair e validar com Gemini
-    const produtoExtraido = await extrairProdutoValidoDoSummary(summary);
-    if (!produtoExtraido) {
+    // ➤ Extrair e validar produto
+    const extracao = await extrairProdutoValidoDoSummary(summary);
+    if (!extracao || !extracao.produto) {
       return res.status(200).json({
         produto: "Não encontrado",
-        error: "Produto não pôde ser extraído ou não é reconhecido como software real"
+        error: "Produto não pôde ser extraído ou validado"
       });
     }
 
-    // 🔍 Verificar se já existe no campo
     const opcoes = await buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl);
-    const similar = encontrarProdutoSemelhante(produtoExtraido, opcoes);
-
-    const valorFinal = similar?.value || produtoExtraido;
+    const similar = encontrarProdutoSemelhante(extracao.produto, opcoes);
+    const valorFinal = similar?.value || extracao.produto;
 
     if (!similar) {
-      await criarOpcaoNoCampo(customFieldId, contextId, produtoExtraido, auth, baseUrl);
+      await criarOpcaoNoCampo(customFieldId, contextId, extracao.produto, auth, baseUrl);
     }
 
-    const novaIssueKey = await criarIssueNoJira(produtoExtraido, auth, projectKey, baseUrl);
+    const novaIssueKey = await criarIssueNoJira(extracao.produto, auth, projectKey, baseUrl);
 
     await atualizarCampoProdutoNaIssue(issueKey, valorFinal, auth, baseUrl);
     await adicionarComentarioNaIssue(
@@ -208,7 +222,8 @@ export default async function handler(req, res) {
       produto: valorFinal,
       criadoAutomaticamente: true,
       novaIssue: novaIssueKey,
-      atualizadoNaIssueOriginal: true
+      atualizadoNaIssueOriginal: true,
+      viaRegex: extracao.viaRegex
     });
 
   } catch (error) {
@@ -219,4 +234,3 @@ export default async function handler(req, res) {
     });
   }
 }
-
