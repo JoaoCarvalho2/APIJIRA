@@ -1,29 +1,27 @@
 import axios from "axios";
 
-// 🔁 Delay para aguardar criação da opção no campo
+// 🔁 Delay para aguardar propagação no Jira
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// 4. Atualizar campo da issue
-async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
-  const customFieldId = "customfield_10878";
-
-  await axios.put(
-    `${baseUrl}/rest/api/3/issue/${issueKey}`,
-    {
-      fields: {
-        [customFieldId]: { value: produto }
-      }
-    },
-    { auth }
-  );
-}
-
-// 🎯 Regex: extrair o valor entre as barras
+// 🎯 Regex para extrair produto entre barras
 function extrairEntreBarras(texto) {
   const match = texto.match(/^.+\s*\/\s*(.+?)\s*\/\s*\d+\s*$/);
   return match?.[1]?.trim() || null;
+}
+
+// 🧠 Normalização para comparação robusta
+function normalizarTexto(str) {
+  return str.toLowerCase().trim();
+}
+
+function encontrarProdutoSemelhante(nome, lista) {
+  const nomeNorm = normalizarTexto(nome);
+  return lista.find(opt => {
+    const optNorm = normalizarTexto(opt.value);
+    return optNorm === nomeNorm || nomeNorm.includes(optNorm) || optNorm.includes(nomeNorm);
+  });
 }
 
 // 1. Extrair e validar nome do produto com Gemini
@@ -68,9 +66,77 @@ async function extrairProdutoValidoDoSummary(summary) {
   }
 }
 
-// ... [demais funções permanecem iguais] ...
+// 2. Buscar opções do campo no contexto
+async function buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl) {
+  const response = await axios.get(
+    `${baseUrl}/rest/api/3/field/${customFieldId}/context/${contextId}/option`,
+    { auth }
+  );
+  return response.data.values || [];
+}
 
-// 8. Handler principal
+// 3. Criar nova opção no campo
+async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, baseUrl) {
+  const body = {
+    options: [{ value: novoValor }]
+  };
+
+  try {
+    await axios.post(
+      `${baseUrl}/rest/api/3/field/${customFieldId}/context/${contextId}/option`,
+      body,
+      { auth }
+    );
+  } catch (error) {
+    const mensagem = error.response?.data?.errorMessages?.[0] || "";
+    if (mensagem.includes("must be unique in its field")) {
+      console.warn(`⚠️ Opção "${novoValor}" já existe. Ignorando criação.`);
+      return;
+    }
+    throw error;
+  }
+}
+
+// 4. Atualizar campo da issue
+async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
+  const customFieldId = "customfield_10878";
+
+  await axios.put(
+    `${baseUrl}/rest/api/3/issue/${issueKey}`,
+    {
+      fields: {
+        [customFieldId]: { value: produto }
+      }
+    },
+    { auth }
+  );
+}
+
+// 5. Criar issue no Jira
+async function criarIssueNoJira(produto, auth, projectKey, baseUrl) {
+  const issueData = {
+    fields: {
+      project: { key: projectKey },
+      summary: produto,
+      issuetype: { name: "Task" }
+    }
+  };
+
+  const response = await axios.post(`${baseUrl}/rest/api/3/issue`, issueData, { auth });
+  return response.data.key;
+}
+
+// 6. Adicionar comentário
+async function adicionarComentarioNaIssue(issueKey, comentario, auth, baseUrl) {
+  const corpo = comentario.replace(/"/g, '\\"');
+  await axios.post(
+    `${baseUrl}/rest/api/3/issue/${issueKey}/comment`,
+    { body: corpo },
+    { auth }
+  );
+}
+
+// 7. Handler principal
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido" });
@@ -92,7 +158,7 @@ export default async function handler(req, res) {
   const contextId = "11104";
 
   try {
-    // 🔍 Buscar summaries existentes
+    // 🔍 Buscar summaries de issues existentes
     let allIssues = [];
     let startAt = 0;
     const maxResults = 100;
@@ -103,7 +169,6 @@ export default async function handler(req, res) {
         `${baseUrl}/rest/api/3/search?jql=project=${projectKey}&startAt=${startAt}&maxResults=${maxResults}`,
         { auth }
       );
-
       allIssues = allIssues.concat(response.data.issues);
       total = response.data.total;
       startAt += maxResults;
@@ -125,7 +190,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // ➤ Extrair e validar com Gemini
+    // ➤ Extrair e validar produto
     const produtoExtraido = await extrairProdutoValidoDoSummary(summary);
     if (!produtoExtraido) {
       return res.status(200).json({
@@ -134,15 +199,17 @@ export default async function handler(req, res) {
       });
     }
 
-    // 🔍 Verificar se já existe no campo
     const opcoes = await buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl);
-    const similar = encontrarProdutoSemelhante(produtoExtraido, opcoes);
+    console.log("🔎 Opções disponíveis:", opcoes.map(o => `"${o.value}"`).join(", "));
+    console.log("➡️ Produto extraído:", produtoExtraido);
 
+    const similar = encontrarProdutoSemelhante(produtoExtraido, opcoes);
     const valorFinal = similar?.value || produtoExtraido;
+    console.log("🎯 Produto final que será usado:", valorFinal);
 
     if (!similar) {
       await criarOpcaoNoCampo(customFieldId, contextId, produtoExtraido, auth, baseUrl);
-      await delay(3000); // 🕒 Espera 3 segundos para o Jira propagar a nova opção
+      await delay(3000); // ⏳ Esperar 3s após criação
     }
 
     const novaIssueKey = await criarIssueNoJira(produtoExtraido, auth, projectKey, baseUrl);
