@@ -5,7 +5,7 @@ async function extrairProdutoValidoDoSummary(summary) {
   const API_KEY = process.env.GEMINI_API_KEY;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-latest:generateContent?key=${API_KEY}`;
 
-  const extracaoPrompt = `A partir deste resumo, extraia apenas o nome do produto ou software mencionado:\n\n"${summary}"\n\nA resposta deve conter apenas o nome do produto, sem explicações.`;
+  const extracaoPrompt = `A partir deste resumo, extraia apenas o nome do produto ou software mencionado:\n\n"${summary}"\n\nA resposta deve conter apenas o nome do produto ou software, sem explicações.`;
 
   try {
     const responseExtracao = await fetch(endpoint, {
