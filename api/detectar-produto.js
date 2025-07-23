@@ -9,10 +9,10 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { issueKey, summary } = req.body;
-  const baseUrl = process.env.JIRA_URL;
+  const baseUrl = process.env.JIRA_BASE_URL;
   const auth = {
-    username: process.env.JIRA_USER,
-    password: process.env.JIRA_TOKEN,
+    username: process.env.JIRA_EMAIL,
+    password: process.env.JIRA_API_TOKEN,
   };
 
   const customFieldId = 'customfield_10072';
