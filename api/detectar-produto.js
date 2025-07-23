@@ -13,16 +13,35 @@ function extrairEntreBarras(texto) {
 
 // 🧠 Normalização para comparação robusta
 function normalizarTexto(str) {
-  return str.toLowerCase().trim();
+  return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 }
 
 function encontrarProdutoSemelhante(nome, lista) {
   const nomeNorm = normalizarTexto(nome);
-  return lista.find(opt => {
+
+  // 1. Tentativa exata
+  let match = lista.find(opt => normalizarTexto(opt.value) === nomeNorm);
+  if (match) return match;
+
+  // 2. Tentativa por inclusão
+  match = lista.find(opt => {
     const optNorm = normalizarTexto(opt.value);
-    return optNorm === nomeNorm || nomeNorm.includes(optNorm) || optNorm.includes(nomeNorm);
+    return nomeNorm.includes(optNorm) || optNorm.includes(nomeNorm);
   });
+  if (match) return match;
+
+  // 3. Tentativa por palavra-chave (última palavra, por exemplo)
+  const palavras = nomeNorm.split(/\s+/);
+  for (const opt of lista) {
+    const optNorm = normalizarTexto(opt.value);
+    if (palavras.some(p => optNorm.includes(p) || p.includes(optNorm))) {
+      return opt;
+    }
+  }
+
+  return null;
 }
+
 
 // 1. Extrair e validar nome do produto com Gemini
 async function extrairProdutoValidoDoSummary(summary) {
