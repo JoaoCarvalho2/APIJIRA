@@ -72,7 +72,6 @@ async function extrairProdutoValidoDoSummary(summary) {
   }
 }
 
-
 // 2. Buscar opções do campo
 async function buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl) {
   const response = await axios.get(
@@ -193,11 +192,6 @@ export default async function handler(req, res) {
     const produtoEncontrado = summaries.find(s =>
       summaryLower.includes(s.toLowerCase()) || s.toLowerCase().includes(summaryLower)
     );
-  
-  /* Esperar antes de tentar */
-    setTimeout(async () => {
-  await updateIssueWithProduct(issueKey, extractedProduct);
-  }, 4000);
 
     if (produtoEncontrado) {
       await atualizarCampoProdutoNaIssue(issueKey, produtoEncontrado, auth, baseUrl);
