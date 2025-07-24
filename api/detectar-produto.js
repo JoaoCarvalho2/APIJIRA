@@ -1,23 +1,57 @@
 import axios from "axios";
 
-// Função para extrair o nome do produto usando regex
-function extrairNomeProduto(summary) {
-  // Padrão: "Empresa / Produto / Número"
-  const regex = /^[^\/]+\/\s*([^\/]+)\/\s*\d+/;
-  const match = summary.match(regex);
-  
-  if (match && match[1]) {
-    // Remove informações de versão/licença (opcional)
-    const produto = match[1]
-      .replace(/(Professional|Enterprise|Standard|License|Workstation|\d+\.\d+|\(.*\))/gi, '')
-      .trim();
-    
-    return produto;
+// 1. Extrair e validar nome do produto com Gemini
+async function extrairProdutoValidoDoSummary(summary) {
+  const API_KEY = process.env.GEMINI_API_KEY;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-latest:generateContent?key=${API_KEY}`;
+
+  // Validar formato "CLIENTE / SOFTWARE / CÓDIGO"
+  const padraoResumo = /^.+\s*\/\s*.+\s*\/\s*\d+\s*$/;
+  if (!padraoResumo.test(summary)) {
+    console.warn("Resumo fora do padrão esperado.");
+    return null;
   }
-  return null;
+
+  const partes = summary.split(" /");
+  const nomePossivel = partes[1]?.trim();
+  if (!nomePossivel) return null;
+
+  const extracaoPrompt = `Esse texto representa um possível nome de software: "${nomePossivel}". Retorne apenas o nome do produto, sem explicações.`;
+
+  try {
+    const responseExtracao = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: extracaoPrompt }] }] })
+    });
+
+    const produto = responseExtracao?.ok
+      ? (await responseExtracao.json())?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+      : null;
+
+    if (!produto) return null;
+
+    const validacaoPrompt = `"${produto}" é um software real, ferramenta ou produto de tecnologia conhecido? Responda apenas com "SIM" ou "NÃO".`;
+
+    const responseValidacao = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: validacaoPrompt }] }] })
+    });
+
+    const validacao = responseValidacao?.ok
+      ? (await responseValidacao.json())?.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase()
+      : "NÃO";
+
+    return validacao === "SIM" ? produto : null;
+
+  } catch (error) {
+    console.error("❗ Erro ao consultar Gemini:", error.message);
+    return null;
+  }
 }
 
-// Buscar opções do campo no contexto
+// 2. Buscar opções do campo
 async function buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl) {
   const response = await axios.get(
     `${baseUrl}/rest/api/3/field/${customFieldId}/context/${contextId}/option`,
@@ -26,11 +60,9 @@ async function buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl) {
   return response.data.values || [];
 }
 
-// Criar nova opção no campo
+// 3. Criar nova opção
 async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, baseUrl) {
-  const body = {
-    options: [{ value: novoValor }]
-  };
+  const body = { options: [{ value: novoValor }] };
 
   try {
     await axios.post(
@@ -48,33 +80,51 @@ async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, base
   }
 }
 
-// Atualizar campo da issue
+// 4. Atualizar campo
 async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
   const customFieldId = "customfield_10878";
-
   await axios.put(
     `${baseUrl}/rest/api/3/issue/${issueKey}`,
-    {
-      fields: {
-        [customFieldId]: { value: produto }
-      }
-    },
+    { fields: { [customFieldId]: { value: produto } } },
     { auth }
   );
 }
 
-// Comparação de nomes semelhantes
-function encontrarProdutoSemelhante(nome, lista) {
-  const nomeLower = nome.toLowerCase().trim();
-  return lista.find(opt => {
-    const optLower = opt.value.toLowerCase().trim();
-    return optLower === nomeLower || 
-           nomeLower.includes(optLower) || 
-           optLower.includes(nomeLower);
-  });
+// 5. Criar issue auxiliar
+async function criarIssueNoJira(produto, auth, projectKey, baseUrl) {
+  const issueData = {
+    fields: {
+      project: { key: projectKey },
+      summary: produto,
+      issuetype: { name: "Task" }
+    }
+  };
+
+  const response = await axios.post(`${baseUrl}/rest/api/3/issue`, issueData, { auth });
+  return response.data.key;
 }
 
-// Handler principal
+// 6. Comentar issue
+async function adicionarComentarioNaIssue(issueKey, comentario, auth, baseUrl) {
+  await axios.post(
+    `${baseUrl}/rest/api/3/issue/${issueKey}/comment`,
+    { body: comentario },
+    { auth }
+  );
+}
+
+// 7. Produto semelhante
+function encontrarProdutoSemelhante(nome, lista) {
+  const nomeLower = nome.toLowerCase();
+  return lista.find(
+    opt =>
+      opt.value.toLowerCase() === nomeLower ||
+      nomeLower.includes(opt.value.toLowerCase()) ||
+      opt.value.toLowerCase().includes(nomeLower)
+  );
+}
+
+// 8. Handler principal
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido" });
@@ -91,34 +141,77 @@ export default async function handler(req, res) {
   };
 
   const baseUrl = process.env.JIRA_BASE_URL;
+  const projectKey = process.env.JIRA_PROJECT_KEY;
   const customFieldId = "customfield_10878";
   const contextId = "11104";
 
   try {
-    // Extrair nome do produto usando regex
-    const produtoExtraido = extrairNomeProduto(summary);
-    if (!produtoExtraido) {
-      return res.status(400).json({ error: "Não foi possível extrair o nome do produto do summary" });
+    // 🔍 Buscar summaries das issues existentes
+    let allIssues = [];
+    let startAt = 0;
+    const maxResults = 100;
+    let total = 0;
+
+    do {
+      const response = await axios.get(
+        `${baseUrl}/rest/api/3/search?jql=project=${projectKey}&startAt=${startAt}&maxResults=${maxResults}`,
+        { auth }
+      );
+      allIssues = allIssues.concat(response.data.issues);
+      total = response.data.total;
+      startAt += maxResults;
+    } while (startAt < total);
+
+    const summaries = allIssues.map(issue => issue.fields.summary);
+    const summaryLower = summary.toLowerCase();
+
+    const produtoEncontrado = summaries.find(s =>
+      summaryLower.includes(s.toLowerCase()) || s.toLowerCase().includes(summaryLower)
+    );
+
+    if (produtoEncontrado) {
+      await atualizarCampoProdutoNaIssue(issueKey, produtoEncontrado, auth, baseUrl);
+      return res.status(200).json({
+        produto: produtoEncontrado,
+        criadoAutomaticamente: false,
+        atualizadoNaIssueOriginal: true
+      });
     }
 
-    // Buscar opções existentes no campo
+    // ➤ Extrair e validar com Gemini
+    const produtoExtraido = await extrairProdutoValidoDoSummary(summary);
+    if (!produtoExtraido) {
+      return res.status(200).json({
+        produto: "Não encontrado",
+        error: "Produto não pôde ser extraído ou não é reconhecido como software real"
+      });
+    }
+
+    // 🔍 Verificar se já existe no campo
     const opcoes = await buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl);
-    
-    // Verificar se já existe uma opção similar
     const similar = encontrarProdutoSemelhante(produtoExtraido, opcoes);
+
     const valorFinal = similar?.value || produtoExtraido;
 
-    // Se não encontrou similar, cria nova opção
     if (!similar) {
       await criarOpcaoNoCampo(customFieldId, contextId, produtoExtraido, auth, baseUrl);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Aguarda 2 segundos
     }
 
-    // Atualiza a issue original com o valor encontrado/criado
+    const novaIssueKey = await criarIssueNoJira(produtoExtraido, auth, projectKey, baseUrl);
+
     await atualizarCampoProdutoNaIssue(issueKey, valorFinal, auth, baseUrl);
+    await adicionarComentarioNaIssue(
+      issueKey,
+      `Produto "${valorFinal}" não foi encontrado nas issues e foi criado automaticamente como ${novaIssueKey}.`,
+      auth,
+      baseUrl
+    );
 
     return res.status(200).json({
       produto: valorFinal,
-      criadoAutomaticamente: !similar,
+      criadoAutomaticamente: true,
+      novaIssue: novaIssueKey,
       atualizadoNaIssueOriginal: true
     });
 
