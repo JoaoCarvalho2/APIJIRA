@@ -5,16 +5,24 @@ async function extrairProdutoValidoDoSummary(summary) {
   const API_KEY = process.env.GEMINI_API_KEY;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-latest:generateContent?key=${API_KEY}`;
 
-  // Validar formato "CLIENTE / SOFTWARE / CÓDIGO"
   const padraoResumo = /^.+\s*\/\s*.+\s*\/\s*\d+\s*$/;
   if (!padraoResumo.test(summary)) {
-    console.warn("Resumo fora do padrão esperado.");
+    console.warn("[EXTRAÇÃO] Resumo fora do padrão esperado:", summary);
     return null;
   }
 
   const partes = summary.split(" /");
-  const nomePossivel = partes[1]?.trim();
+  let nomePossivel = partes[1]?.trim();
   if (!nomePossivel) return null;
+
+  // 🧹 Limpeza do nome do software
+  nomePossivel = nomePossivel
+    .replace(/\s*-\s*.*$/, "") // remove após hífen
+    .replace(/\b(Annual|Anual|Mensal|Monthly|Yearly|Semestral)\b/gi, "") // remove palavras descritivas
+    .replace(/[^\w\s]/g, "") // remove pontuações
+    .trim();
+
+  console.log("[EXTRAÇÃO] Nome possível extraído:", nomePossivel);
 
   const extracaoPrompt = `Esse texto representa um possível nome de software: "${nomePossivel}". Retorne apenas o nome do produto, sem explicações.`;
 
@@ -28,6 +36,8 @@ async function extrairProdutoValidoDoSummary(summary) {
     const produto = responseExtracao?.ok
       ? (await responseExtracao.json())?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
       : null;
+
+    console.log("[VALIDAÇÃO] Produto retornado pelo Gemini:", produto);
 
     if (!produto) return null;
 
@@ -43,10 +53,12 @@ async function extrairProdutoValidoDoSummary(summary) {
       ? (await responseValidacao.json())?.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase()
       : "NÃO";
 
+    console.log("[VALIDAÇÃO] Veredito:", validacao);
+
     return validacao === "SIM" ? produto : null;
 
   } catch (error) {
-    console.error("❗ Erro ao consultar Gemini:", error.message);
+    console.error("[ERRO] Erro ao consultar Gemini:", error.message);
     return null;
   }
 }
@@ -70,10 +82,11 @@ async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, base
       body,
       { auth }
     );
+    console.log(`[INFO] Nova opção criada: ${novoValor}`);
   } catch (error) {
     const mensagem = error.response?.data?.errorMessages?.[0] || "";
     if (mensagem.includes("must be unique in its field")) {
-      console.warn(`⚠️ Opção "${novoValor}" já existe. Ignorando criação.`);
+      console.warn(`[INFO] Opção já existente ignorada: ${novoValor}`);
       return;
     }
     throw error;
@@ -88,6 +101,7 @@ async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
     { fields: { [customFieldId]: { value: produto } } },
     { auth }
   );
+  console.log(`[INFO] Produto "${produto}" atualizado na issue ${issueKey}`);
 }
 
 // 5. Criar issue auxiliar
@@ -101,6 +115,7 @@ async function criarIssueNoJira(produto, auth, projectKey, baseUrl) {
   };
 
   const response = await axios.post(`${baseUrl}/rest/api/3/issue`, issueData, { auth });
+  console.log(`[INFO] Nova issue criada para produto "${produto}": ${response.data.key}`);
   return response.data.key;
 }
 
@@ -181,13 +196,13 @@ export default async function handler(req, res) {
     // ➤ Extrair e validar com Gemini
     const produtoExtraido = await extrairProdutoValidoDoSummary(summary);
     if (!produtoExtraido) {
+      console.log("[INFO] Produto não pôde ser extraído ou validado");
       return res.status(200).json({
         produto: "Não encontrado",
         error: "Produto não pôde ser extraído ou não é reconhecido como software real"
       });
     }
 
-    // 🔍 Verificar se já existe no campo
     const opcoes = await buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl);
     const similar = encontrarProdutoSemelhante(produtoExtraido, opcoes);
 
@@ -195,7 +210,7 @@ export default async function handler(req, res) {
 
     if (!similar) {
       await criarOpcaoNoCampo(customFieldId, contextId, produtoExtraido, auth, baseUrl);
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Aguarda 2 segundos
+      await new Promise(resolve => setTimeout(resolve, 2000)); // 2s para garantir propagação
     }
 
     const novaIssueKey = await criarIssueNoJira(produtoExtraido, auth, projectKey, baseUrl);
@@ -216,7 +231,7 @@ export default async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error("❗ Erro geral:", error.response?.data || error.message || error);
+    console.error("[ERRO] Erro geral:", error.response?.data || error.message || error);
     return res.status(500).json({
       error: "Erro interno ao processar requisição",
       details: error.response?.data || error.message || error
