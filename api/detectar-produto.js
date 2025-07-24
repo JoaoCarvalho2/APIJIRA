@@ -7,7 +7,7 @@ async function extrairProdutoValidoDoSummary(summary) {
 
   const padraoResumo = /^.+\s*\/\s*.+\s*\/\s*\d+\s*$/;
   if (!padraoResumo.test(summary)) {
-    console.warn("[EXTRAÇÃO] Resumo fora do padrão esperado:", summary);
+    console.warn("[AVISO] Resumo fora do padrão:", summary);
     return null;
   }
 
@@ -15,11 +15,11 @@ async function extrairProdutoValidoDoSummary(summary) {
   let nomePossivel = partes[1]?.trim();
   if (!nomePossivel) return null;
 
-  // 🧹 Limpeza do nome do software
+  // Limpeza
   nomePossivel = nomePossivel
-    .replace(/\s*-\s*.*$/, "") // remove após hífen
-    .replace(/\b(Annual|Anual|Mensal|Monthly|Yearly|Semestral)\b/gi, "") // remove palavras descritivas
-    .replace(/[^\w\s]/g, "") // remove pontuações
+    .replace(/\s*-\s*.*$/, "")
+    .replace(/\b(Annual|Anual|Mensal|Monthly|Yearly|Semestral)\b/gi, "")
+    .replace(/[^\w\s]/g, "")
     .trim();
 
   console.log("[EXTRAÇÃO] Nome possível extraído:", nomePossivel);
@@ -30,30 +30,39 @@ async function extrairProdutoValidoDoSummary(summary) {
     const responseExtracao = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: extracaoPrompt }] }] })
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: extracaoPrompt }] }]
+      })
     });
 
-    const produto = responseExtracao?.ok
-      ? (await responseExtracao.json())?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
-      : null;
+    const bodyExtracao = await responseExtracao.json();
+    console.log("[DEBUG] Corpo da resposta (extração):", JSON.stringify(bodyExtracao));
+
+    const produto = bodyExtracao?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
 
     console.log("[VALIDAÇÃO] Produto retornado pelo Gemini:", produto);
 
-    if (!produto) return null;
+    if (!produto) {
+      console.log("[INFO] Produto não pôde ser extraído ou validado");
+      return null;
+    }
 
     const validacaoPrompt = `"${produto}" é um software real, ferramenta ou produto de tecnologia conhecido? Responda apenas com "SIM" ou "NÃO".`;
 
     const responseValidacao = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: validacaoPrompt }] }] })
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: validacaoPrompt }] }]
+      })
     });
 
-    const validacao = responseValidacao?.ok
-      ? (await responseValidacao.json())?.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase()
-      : "NÃO";
+    const bodyValidacao = await responseValidacao.json();
+    console.log("[DEBUG] Corpo da resposta (validação):", JSON.stringify(bodyValidacao));
 
-    console.log("[VALIDAÇÃO] Veredito:", validacao);
+    const validacao = bodyValidacao?.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase() || "NÃO";
+
+    console.log("[VALIDAÇÃO] Resultado da validação:", validacao);
 
     return validacao === "SIM" ? produto : null;
 
@@ -62,6 +71,7 @@ async function extrairProdutoValidoDoSummary(summary) {
     return null;
   }
 }
+
 
 // 2. Buscar opções do campo
 async function buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl) {
