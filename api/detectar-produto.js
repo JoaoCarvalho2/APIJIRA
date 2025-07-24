@@ -149,6 +149,8 @@ function encontrarProdutoSemelhante(nome, lista) {
 }
 
 // 8. Handler principal
+// [... código anterior intacto ...]
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido" });
@@ -156,6 +158,7 @@ export default async function handler(req, res) {
 
   const { summary, issueKey } = req.body || {};
   if (!summary || !issueKey) {
+    console.warn("[AVISO] Campos obrigatórios ausentes:", { summary, issueKey });
     return res.status(400).json({ error: "Resumo ou issueKey não fornecido" });
   }
 
@@ -170,80 +173,60 @@ export default async function handler(req, res) {
   const contextId = "11104";
 
   try {
-    // 🔍 Buscar summaries das issues existentes
-    let allIssues = [];
-    let startAt = 0;
-    const maxResults = 100;
-    let total = 0;
-
-    do {
-      const response = await axios.get(
-        `${baseUrl}/rest/api/3/search?jql=project=${projectKey}&startAt=${startAt}&maxResults=${maxResults}`,
-        { auth }
-      );
-      allIssues = allIssues.concat(response.data.issues);
-      total = response.data.total;
-      startAt += maxResults;
-    } while (startAt < total);
-
-    const summaries = allIssues.map(issue => issue.fields.summary);
-    const summaryLower = summary.toLowerCase();
-
-    const produtoEncontrado = summaries.find(s =>
-      summaryLower.includes(s.toLowerCase()) || s.toLowerCase().includes(summaryLower)
-    );
-
-    if (produtoEncontrado) {
-      await atualizarCampoProdutoNaIssue(issueKey, produtoEncontrado, auth, baseUrl);
-      return res.status(200).json({
-        produto: produtoEncontrado,
-        criadoAutomaticamente: false,
-        atualizadoNaIssueOriginal: true
-      });
-    }
+    console.log(`[INÍCIO] Processando issue ${issueKey} com summary: "${summary}"`);
 
     // ➤ Extrair e validar com Gemini
     const produtoExtraido = await extrairProdutoValidoDoSummary(summary);
     if (!produtoExtraido) {
-      console.log("[INFO] Produto não pôde ser extraído ou validado");
+      console.log("[INFO] Nenhum produto válido extraído pelo Gemini.");
       return res.status(200).json({
         produto: "Não encontrado",
         error: "Produto não pôde ser extraído ou não é reconhecido como software real"
       });
     }
 
+    console.log(`[VALIDADO] Produto extraído e validado: "${produtoExtraido}"`);
+
     const opcoes = await buscarOpcoesDoCampo(customFieldId, contextId, auth, baseUrl);
     const similar = encontrarProdutoSemelhante(produtoExtraido, opcoes);
 
     const valorFinal = similar?.value || produtoExtraido;
-
-    if (!similar) {
+    if (similar) {
+      console.log(`[INFO] Produto semelhante encontrado nas opções: "${similar.value}"`);
+    } else {
+      console.log(`[INFO] Produto não encontrado nas opções. Criando novo: "${produtoExtraido}"`);
       await criarOpcaoNoCampo(customFieldId, contextId, produtoExtraido, auth, baseUrl);
-      await new Promise(resolve => setTimeout(resolve, 2000)); // 2s para garantir propagação
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Aguardar propagação
     }
 
-    const novaIssueKey = await criarIssueNoJira(produtoExtraido, auth, projectKey, baseUrl);
-
     await atualizarCampoProdutoNaIssue(issueKey, valorFinal, auth, baseUrl);
-    await adicionarComentarioNaIssue(
-      issueKey,
-      `Produto "${valorFinal}" não foi encontrado nas issues e foi criado automaticamente como ${novaIssueKey}.`,
-      auth,
-      baseUrl
-    );
+
+    let novaIssueKey = null;
+    if (!similar) {
+      novaIssueKey = await criarIssueNoJira(produtoExtraido, auth, projectKey, baseUrl);
+      await adicionarComentarioNaIssue(
+        issueKey,
+        `Produto "${valorFinal}" não foi encontrado nas opções e foi criado automaticamente como issue ${novaIssueKey}.`,
+        auth,
+        baseUrl
+      );
+    }
+
+    console.log(`[SUCESSO] Campo de produto atualizado na issue ${issueKey}`);
 
     return res.status(200).json({
       produto: valorFinal,
-      criadoAutomaticamente: true,
+      criadoAutomaticamente: !similar,
       novaIssue: novaIssueKey,
       atualizadoNaIssueOriginal: true
     });
 
   } catch (error) {
-    console.error("[ERRO] Erro geral:", error.response?.data || error.message || error);
+    const erroDetalhado = error.response?.data || error.message || error;
+    console.error("[ERRO] Erro geral ao processar:", erroDetalhado);
     return res.status(500).json({
       error: "Erro interno ao processar requisição",
-      details: error.response?.data || error.message || error
+      details: erroDetalhado
     });
   }
 }
