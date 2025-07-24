@@ -3,7 +3,7 @@ import axios from "axios";
 // 1. Extrair e validar nome do produto com Gemini
 async function extrairProdutoValidoDoSummary(summary) {
   const API_KEY = process.env.GEMINI_API_KEY;
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-latest:generateContent?key=${API_KEY}`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
 
   const padraoResumo = /^.+\s*\/\s*.+\s*\/\s*\d+\s*$/;
   if (!padraoResumo.test(summary)) {
