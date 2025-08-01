@@ -149,7 +149,6 @@ function encontrarProdutoSemelhante(nome, lista) {
 }
 
 // 8. Handler principal
-// [... código anterior intacto ...]
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
