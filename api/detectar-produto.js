@@ -24,7 +24,7 @@ async function extrairProdutoValidoDoSummary(summary) {
 
   console.log("[EXTRAÇÃO] Nome possível extraído:", nomePossivel);
 
-  const extracaoPrompt = `Esse texto representa um possível nome de software: "${nomePossivel}". Retorne apenas o nome do produto, sem explicações.`;
+  const extracaoPrompt = `Esse texto representa um possível nome de software: "${nomePossivel}". Retorne apenas o nome do produto não envolvendo versão nem nada, sem explicações.`;
 
   try {
     const responseExtracao = await fetch(endpoint, {
