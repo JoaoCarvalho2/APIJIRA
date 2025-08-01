@@ -105,7 +105,7 @@ async function criarOpcaoNoCampo(customFieldId, contextId, novoValor, auth, base
 // 4. Atualizar campo
 async function atualizarCampoProdutoNaIssue(issueKey, produto, auth, baseUrl) {
   const customFieldId = "customfield_10878";
-  await axios.patch(
+  await axios.put(
     `${baseUrl}/rest/api/3/issue/${issueKey}`,
     { fields: { [customFieldId]: { value: produto } } },
     { auth }
