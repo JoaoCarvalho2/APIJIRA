@@ -34,7 +34,7 @@ async function extrairProdutoValidoDoSummary(summary) {
       })
     });
 
-    console.log("Resposta do Gemini extraçãoPrompt" extracaoPrompt);
+    console.log("Resposta do Gemini extraçãoPrompt", extracaoPrompt);
 
     const bodyExtracao = await responseExtracao.json();
     console.log("[DEBUG] Corpo da resposta (extração):", JSON.stringify(bodyExtracao));
