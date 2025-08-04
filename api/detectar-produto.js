@@ -92,7 +92,7 @@ export default async function handler(req, res) {
     if (!produtoExtraido) {
       console.log("[INFO] Nenhum produto válido extraído pelo Gemini.");
       return res.status(200).json({
-        produto: "Não encontrado",
+        produto: produtoExtraido,
         error: "Produto não pôde ser extraído ou não é reconhecido como software real"
       });
     }
