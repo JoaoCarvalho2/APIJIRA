@@ -5,7 +5,7 @@ async function extrairProdutoValidoDoSummary(summary) {
   const API_KEY = process.env.GEMINI_API_KEY;
   const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
 
-  const padraoResumo = /^.+\s*\/\s*.+\s*\/\s*\d+\s*$/;
+  const padraoResumo = /^(.+)\s*\/\s*(.+)\s*\/\s*(\d+)\s*$/;
   if (!padraoResumo.test(summary)) {
     console.warn("[AVISO] Resumo fora do padrão:", summary);
     return { produto: null, validado: false };
