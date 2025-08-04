@@ -8,12 +8,12 @@ async function extrairProdutoValidoDoSummary(summary) {
   const padraoResumo = /^.+\s*\/\s*.+\s*\/\s*\d+\s*$/;
   if (!padraoResumo.test(summary)) {
     console.warn("[AVISO] Resumo fora do padrão:", summary);
-    return null;
+    return { produto: null, validado: false };
   }
 
   const partes = summary.split(" /");
   let nomePossivel = partes[1]?.trim();
-  if (!nomePossivel) return null;
+  if (!nomePossivel) return { produto: null, validado: false };
 
   nomePossivel = nomePossivel
     .replace(/\s*-\s*.*$/, "")
@@ -44,8 +44,8 @@ async function extrairProdutoValidoDoSummary(summary) {
     console.log("[VALIDAÇÃO] Produto retornado pelo Gemini:", produto);
 
     if (!produto) {
-      console.log("[INFO] Produto não pôde ser extraído ou validado");
-      return null;
+      console.log("[INFO] Produto não pôde ser extraído");
+      return { produto: null, validado: false };
     }
 
     const validacaoPrompt = `"${produto}" é um software real, ferramenta ou produto de tecnologia conhecido? Responda apenas com "SIM" ou "NÃO".`;
@@ -65,11 +65,14 @@ async function extrairProdutoValidoDoSummary(summary) {
 
     console.log("[VALIDAÇÃO] Resultado da validação:", validacao);
 
-    return validacao === "SIM" ? produto : null;
+    return {
+      produto,
+      validado: validacao === "SIM"
+    };
 
   } catch (error) {
     console.error("[ERRO] Erro ao consultar Gemini:", error.message);
-    return null;
+    return { produto: null, validado: false };
   }
 }
 
@@ -88,20 +91,22 @@ export default async function handler(req, res) {
   try {
     console.log(`[INÍCIO] Processando issue ${issueKey} com summary: "${summary}"`);
 
-    const produtoExtraido = await extrairProdutoValidoDoSummary(summary);
-    if (!produtoExtraido) {
-      console.log("[INFO] Nenhum produto válido extraído pelo Gemini.");
+    const { produto, validado } = await extrairProdutoValidoDoSummary(summary);
+
+    if (!produto) {
+      console.log("[INFO] Nenhum produto foi extraído.");
       return res.status(200).json({
-        produto: produtoExtraido,
-        error: "Produto não pôde ser extraído ou não é reconhecido como software real"
+        produto: "Não encontrado",
+        validado: false,
+        error: "Produto não pôde ser extraído"
       });
     }
 
-    console.log(`[SUCESSO] Produto extraído e validado: "${produtoExtraido}"`);
+    console.log(`[RESULTADO] Produto: "${produto}" | Validado: ${validado}`);
 
     return res.status(200).json({
-      produto: produtoExtraido,
-      status: "validado"
+      produto,
+      validado
     });
 
   } catch (error) {
