@@ -17,7 +17,7 @@ async function extrairProdutoValidoDoSummary(summary) {
 
   nomePossivel = nomePossivel
     .replace(/\s*-\s*.*$/, "")
-    .replace(/\b(Annual|Anual|Mensal|Monthly|Yearly|Semestral|Subscription|Subscrição|Premium|Standard|Professional|Cloud|Server|Business|Enterprise|Profissional|Advanced|-|Platinum|Unlimited|2024|2023|2022|2021|2020|2019|2018|2017|2016|2015|v6|v7|v5|v4|v3|v2|v1|upgrade|500k|20m|)\b/gi, "")
+    .replace(/\b(Annual|Anual|Mensal|Monthly|Yearly|Semestral|Subscription|Subscrição|)\b/gi, "")
     .replace(/[^\w\s]/g, "")
     .trim();
 
